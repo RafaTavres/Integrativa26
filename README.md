@@ -47,6 +47,38 @@ npm run build   # build de produção (Turbopack)
 npm start       # sobe o build
 ```
 
+### Docker
+
+A imagem é multi-stage, roda como usuário sem privilégios e usa a saída
+`standalone` do Next.js (somente o necessário para produção).
+
+```bash
+docker compose up -d --build     # http://localhost:3000
+docker compose logs -f web       # acompanhar logs
+docker compose down              # parar
+```
+
+Para testar em uma URL pública temporária, o Compose já traz um túnel do
+Cloudflare no profile `public`:
+
+```bash
+docker compose --profile public up -d
+docker compose logs -f tunnel    # mostra a URL *.trycloudflare.com
+```
+
+A URL do quick tunnel é temporária e muda a cada reinício. Para uma rota
+permanente, crie um túnel nomeado no Cloudflare e use o token:
+
+```bash
+export CLOUDFLARE_TUNNEL_TOKEN="seu-token"
+```
+
+No `compose.yaml`, troque o `command` do serviço `tunnel` por:
+
+```yaml
+command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+```
+
 Não há variáveis de ambiente obrigatórias nesta fase.
 
 ---
@@ -90,6 +122,9 @@ location.reload();
 ## 4. Estrutura do projeto
 
 ```text
+Dockerfile                  # imagem multi-stage de produção (standalone)
+compose.yaml                # app + túnel opcional do Cloudflare
+public/                     # arquivos estáticos
 src/
   app/
     layout.tsx              # fontes, providers, metadata e viewport
