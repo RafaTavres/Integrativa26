@@ -26,6 +26,7 @@ export function ExpenseSheet({ onClose }: ExpenseSheetProps) {
     PaymentMethod | undefined
   >();
   const [attempted, setAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessData | null>(null);
 
@@ -35,14 +36,16 @@ export function ExpenseSheet({ onClose }: ExpenseSheetProps) {
   const amountError =
     attempted && amountCents < 1 ? "Informe quanto saiu." : null;
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAttempted(true);
     setSubmitError(null);
+    if (submitting) return;
     if (!description.trim() || amountCents < 1) return;
 
+    setSubmitting(true);
     try {
-      recordExpense({
+      await recordExpense({
         description,
         amountCents,
         paymentMethod: paymentMethod ?? "other",
@@ -55,6 +58,8 @@ export function ExpenseSheet({ onClose }: ExpenseSheetProps) {
       setSubmitError(
         error instanceof Error ? error.message : "Não conseguimos salvar.",
       );
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -96,9 +101,11 @@ export function ExpenseSheet({ onClose }: ExpenseSheetProps) {
         <button
           type="submit"
           form="expense-form"
+          disabled={submitting}
+          aria-busy={submitting || undefined}
           className="btn btn-primary h-14 w-full text-base"
         >
-          Salvar
+          {submitting ? "Salvando…" : "Salvar"}
           <ArrowRight className="size-5" strokeWidth={2.2} />
         </button>
       }

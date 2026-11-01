@@ -27,24 +27,35 @@ export function ProductEditSheet({
   );
   const [minStock, setMinStock] = useState(String(product?.minStock ?? 0));
   const [attempted, setAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!product) return null;
 
   const priceCents = parseMoneyInput(priceInput);
   const nameError = attempted && !name.trim() ? "Diga o nome." : null;
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAttempted(true);
-    if (!name.trim()) return;
+    if (!name.trim() || submitting) return;
 
-    updateProduct(productId, {
-      name,
-      priceCents,
-      minStock: Number.parseInt(minStock || "0", 10) || 0,
-    });
-    toast("Item atualizado.");
-    onClose();
+    setSubmitting(true);
+    try {
+      await updateProduct(productId, {
+        name,
+        priceCents,
+        minStock: Number.parseInt(minStock || "0", 10) || 0,
+      });
+      toast("Item atualizado.");
+      onClose();
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Não conseguimos salvar.",
+        "info",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -55,9 +66,11 @@ export function ProductEditSheet({
         <button
           type="submit"
           form="product-form"
+          disabled={submitting}
+          aria-busy={submitting || undefined}
           className="btn btn-primary h-14 w-full text-base"
         >
-          Salvar
+          {submitting ? "Salvando…" : "Salvar"}
           <ArrowRight className="size-5" strokeWidth={2.2} />
         </button>
       }

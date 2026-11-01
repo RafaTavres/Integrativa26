@@ -23,6 +23,7 @@ export function TransactionDetailSheet({
   const { transactions, deleteTransaction } = useApp();
   const { toast } = useToast();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const transaction = transactions.find((item) => item.id === transactionId);
   if (!transaction) return null;
@@ -37,10 +38,21 @@ export function TransactionDetailSheet({
   const showSource = transaction.sourceType !== "manual";
   const showQuantity = Boolean(transaction.quantity && transaction.quantity > 1);
 
-  function handleDelete() {
-    deleteTransaction(transactionId);
-    toast("Registro apagado.");
-    onClose();
+  async function handleDelete() {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await deleteTransaction(transactionId);
+      toast("Registro apagado.");
+      onClose();
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Não conseguimos apagar.",
+        "info",
+      );
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
   }
 
   return (
@@ -132,10 +144,12 @@ export function TransactionDetailSheet({
                 <button
                   type="button"
                   onClick={handleDelete}
+                  disabled={deleting}
+                  aria-busy={deleting || undefined}
                   className="btn h-10 flex-1 bg-terracotta-dark text-xs text-cream"
                 >
                   <Trash2 className="size-4" strokeWidth={2} />
-                  Apagar
+                  {deleting ? "Apagando…" : "Apagar"}
                 </button>
               </div>
             </div>

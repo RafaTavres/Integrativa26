@@ -42,6 +42,7 @@ export function StockEntrySheet({
   const [costTouched, setCostTouched] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [attempted, setAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessData | null>(null);
 
@@ -92,15 +93,17 @@ export function StockEntrySheet({
     setSubmitError(null);
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAttempted(true);
     setSubmitError(null);
+    if (submitting) return;
     if (!name.trim()) return;
     if (costInput.trim() && totalCostCents < 1) return;
 
+    setSubmitting(true);
     try {
-      const result = addStock({
+      const result = await addStock({
         productId: selectedProduct?.id,
         name,
         quantity,
@@ -115,6 +118,8 @@ export function StockEntrySheet({
       setSubmitError(
         error instanceof Error ? error.message : "Não conseguimos salvar.",
       );
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -164,9 +169,11 @@ export function StockEntrySheet({
         <button
           type="submit"
           form="stock-form"
+          disabled={submitting}
+          aria-busy={submitting || undefined}
           className="btn btn-primary h-14 w-full text-base"
         >
-          Salvar
+          {submitting ? "Salvando…" : "Salvar"}
           <ArrowRight className="size-5" strokeWidth={2.2} />
         </button>
       }

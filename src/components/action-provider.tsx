@@ -14,9 +14,13 @@ import { StockEntrySheet } from "./stock-entry-sheet";
 import { TransactionDetailSheet } from "./transaction-detail-sheet";
 import { ProductEditSheet } from "./product-edit-sheet";
 import { MoreSheet } from "./more-sheet";
+import { RegisterSheet } from "./register-sheet";
+import { ReceiptSheet } from "./receipt-sheet";
 
 type SheetState =
   | { type: "none" }
+  | { type: "register" }
+  | { type: "receipt" }
   | { type: "sale"; pendingId?: string }
   | { type: "expense" }
   | { type: "stock"; productId?: string }
@@ -26,6 +30,8 @@ type SheetState =
   | { type: "more" };
 
 interface ActionsContextValue {
+  openRegister: () => void;
+  openReceipt: () => void;
   openSale: () => void;
   openExpense: () => void;
   openStock: (productId?: string) => void;
@@ -42,6 +48,8 @@ export function ActionProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<SheetState>({ type: "none" });
 
   const close = useCallback(() => setSheet({ type: "none" }), []);
+  const openRegister = useCallback(() => setSheet({ type: "register" }), []);
+  const openReceipt = useCallback(() => setSheet({ type: "receipt" }), []);
   const openSale = useCallback(() => setSheet({ type: "sale" }), []);
   const openExpense = useCallback(() => setSheet({ type: "expense" }), []);
   const openStock = useCallback(
@@ -64,6 +72,8 @@ export function ActionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
+      openRegister,
+      openReceipt,
       openSale,
       openExpense,
       openStock,
@@ -74,6 +84,8 @@ export function ActionProvider({ children }: { children: ReactNode }) {
       close,
     }),
     [
+      openRegister,
+      openReceipt,
       openSale,
       openExpense,
       openStock,
@@ -89,6 +101,10 @@ export function ActionProvider({ children }: { children: ReactNode }) {
     <ActionsContext.Provider value={value}>
       {children}
 
+      {sheet.type === "register" ? (
+        <RegisterSheet onClose={close} />
+      ) : null}
+      {sheet.type === "receipt" ? <ReceiptSheet onClose={close} /> : null}
       {sheet.type === "sale" ? (
         <SaleSheet onClose={close} pendingId={sheet.pendingId} />
       ) : null}

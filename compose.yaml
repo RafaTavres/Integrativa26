@@ -8,6 +8,11 @@ services:
     image: meu-caixa:latest
     ports:
       - "${APP_PORT:-3000}:3000"
+    # Credenciais ficam fora da imagem: entram no container em tempo de
+    # execução. Trocar de projeto Supabase não exige rebuild.
+    env_file:
+      - path: .env.local
+        required: false
     environment:
       NODE_ENV: production
       PORT: "3000"

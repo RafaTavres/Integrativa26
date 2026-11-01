@@ -114,6 +114,7 @@ export function SaleSheet({ onClose, pendingId }: SaleSheetProps) {
   >(pending?.paymentMethod);
   const [showPicker, setShowPicker] = useState(!initialProduct);
   const [attempted, setAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessData | null>(null);
 
@@ -155,15 +156,17 @@ export function SaleSheet({ onClose, pendingId }: SaleSheetProps) {
     }
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAttempted(true);
     setSubmitError(null);
+    if (submitting) return;
     if (!selectedProduct || amountCents < 1 || !paymentMethod) return;
 
+    setSubmitting(true);
     try {
       if (pending) {
-        reviewPending({
+        await reviewPending({
           transactionId: pending.id,
           productId: selectedProduct.id,
           quantity,
@@ -171,7 +174,7 @@ export function SaleSheet({ onClose, pendingId }: SaleSheetProps) {
           paymentMethod,
         });
       } else {
-        recordSale({
+        await recordSale({
           productId: selectedProduct.id,
           quantity,
           amountCents,
@@ -188,6 +191,8 @@ export function SaleSheet({ onClose, pendingId }: SaleSheetProps) {
       setSubmitError(
         error instanceof Error ? error.message : "Não conseguimos salvar.",
       );
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -202,11 +207,20 @@ export function SaleSheet({ onClose, pendingId }: SaleSheetProps) {
     setSubmitError(null);
   }
 
-  function handleDiscard() {
+  async function handleDiscard() {
     if (!pending) return;
-    discardPending(pending.id);
-    toast("Rascunho descartado.", "info");
-    onClose();
+    try {
+      await discardPending(pending.id);
+      toast("Rascunho descartado.", "info");
+      onClose();
+    } catch (error) {
+      toast(
+        error instanceof Error
+          ? error.message
+          : "Não conseguimos descartar.",
+        "info",
+      );
+    }
   }
 
   if (success) {
@@ -262,9 +276,11 @@ export function SaleSheet({ onClose, pendingId }: SaleSheetProps) {
         <button
           type="submit"
           form="sale-form"
+          disabled={submitting}
+          aria-busy={submitting || undefined}
           className="btn btn-primary h-14 w-full text-base"
         >
-          {isReview ? "Confirmar" : "Salvar"}
+          {submitting ? "Salvando…" : isReview ? "Confirmar" : "Salvar"}
           <ArrowRight className="size-5" strokeWidth={2.2} />
         </button>
       }

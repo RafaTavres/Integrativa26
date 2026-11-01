@@ -19,13 +19,16 @@ Demo: [`http://localhost:3000`](http://localhost:3000) após rodar o projeto.
 | Estilo | **Tailwind CSS 4.3.3** | Tokens de design centralizados, layout responsivo rápido e CSS pequeno em produção. |
 | Ícones | **lucide-react** | Ícones leves, consistentes e com bom traço para botões grandes. |
 | Fontes | **Figtree Variable + Fraunces Variable** (local via Fontsource) | Figtree dá clareza no corpo e nos números; Fraunces traz o aconchego artesanal da marca. Sem dependência de CDN. |
-| Persistência do MVP | **localStorage** (`meu-caixa:demo:v2`) | Permite testar todos os fluxos sem login, credenciais ou backend. |
-| Banco de produção | **Supabase Postgres** | Postgres relacional, Auth, RLS, Storage para áudios/fotos e funções RPC para operações atômicas. |
+| Persistência | **Supabase Postgres** com **login anônimo** | Cada navegador ganha uma sessão própria (sem senha) e os dados ficam no banco, com RLS por negócio. |
+| Fallback | **localStorage** (`meu-caixa:demo:v2`) | Se o Supabase não estiver configurado ou a conexão cair, o app continua funcionando neste navegador. |
+| Backend | **Next.js Route Handler** (`/api/config`) | Entrega URL e chave pública em tempo de execução: trocar de projeto não exige rebuild da imagem. |
 | IA futura | **Whisper + Vision + fila/Edge Functions** | Transcrição de áudio, leitura de comprovantes/fotos e importação de WhatsApp sem acoplar a IA ao front-end. |
 
-### Por que não começar com um banco online?
+### Por que login anônimo?
 
-O objetivo do MVP é validar o fluxo de uso. O store local tem a mesma forma do modelo relacional e fica isolado em `src/lib/store.tsx`, então a troca por Supabase não exige reescrever a interface.
+O público do app não quer criar conta para registrar uma venda. O login anônimo do Supabase dá um `auth.users` real (com RLS e `memberships`) sem pedir e-mail nem senha, e o mesmo código aceita e-mail/telefone no futuro. A sessão fica em `meu-caixa:auth` no navegador — por isso, hoje, ela não sincroniza entre aparelhos.
+
+As credenciais usadas no navegador são apenas a URL do projeto e a chave **publishable/anon**. A chave `service_role`/`sb_secret_` é rejeitada em `src/lib/supabase/config.ts`, porque ela ignora o RLS.
 
 ---
 
@@ -46,6 +49,21 @@ Outros comandos:
 npm run build   # build de produção (Turbopack)
 npm start       # sobe o build
 ```
+
+### Supabase
+
+1. Copie `.env.example` para `.env.local` e preencha:
+
+```bash
+SUPABASE_URL=https://SEU-PROJETO.supabase.co
+SUPABASE_ANON_KEY=SUA-CHAVE-PUBLICA
+```
+
+2. Rode [`supabase/schema.sql`](supabase/schema.sql) no SQL Editor do projeto.
+3. Ative **Authentication → Sign In / Providers → Anonymous sign-ins**.
+4. Suba o app. O primeiro acesso cria a sessão anônima, o negócio e os exemplos do ramo.
+
+Sem essas variáveis o app abre em modo local, com o aviso “Salvo neste navegador”. As variáveis não levam o prefixo `NEXT_PUBLIC_`: o servidor as entrega em `/api/config` a cada requisição e a chave não entra no bundle.
 
 ### Docker
 
@@ -79,7 +97,7 @@ No `compose.yaml`, troque o `command` do serviço `tunnel` por:
 command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
 ```
 
-Não há variáveis de ambiente obrigatórias nesta fase.
+Não há variáveis obrigatórias: o `compose.yaml` lê o `.env.local` em tempo de execução (`env_file` com `required: false`).
 
 ---
 
@@ -88,8 +106,11 @@ Não há variáveis de ambiente obrigatórias nesta fase.
 ### Fluxos principais
 
 - **Escolha do ramo** — no menu da loja, o seletor **Confeitaria / Barbearia / Loja de roupas** troca nome, produtos, exemplos e vocabulário. Cada ramo tem seus próprios dados de demonstração.
+- **Registrar** — o botão principal da home abre um hub com quatro caminhos: **Vender**, **Gasto**, **Foto da nota** e **Áudio**. É a porta única de entrada, para o usuário não precisar decorar onde cada coisa mora.
 - **Venda rápida em uma tela** — “O que vendeu?”, “Quanto entrou?” e “Como pagou?”. O seletor de produto recolhe depois da escolha para os três campos caberem no celular. Itens com estoque baixam automaticamente; serviços não movimentam estoque.
 - **Gasto rápido** — descrição, valor e forma de pagamento (opcional).
+- **Foto da nota** — anexa cupom/comprovante, escolhe se é venda ou compra, confirma produto, valor e pagamento, e salva com `source_type = image_recognition`. O preview fica só no navegador: nesta versão o arquivo não é enviado ao servidor.
+- **Áudio** — cria um rascunho `pending_review` com `source_type = audio_transcription` para conferência na home.
 - **Entrada de estoque** — produto, quantidade e custo. Se o produto não existe, ele é criado com preço sugerido; se existe, o custo é recalculado pela média ponderada. A compra também entra como gasto no caixa.
 - **Radar de estoque** — produtos no mínimo ou zerados aparecem no topo do extrato e na página de estoque/produtos, com ação direta para repor.
 - **Conferência de IA** — card de rascunho com os dados pré-preenchidos. Nada entra no caixa até a confirmação. É possível confirmar ou descartar.
@@ -110,7 +131,7 @@ Cada ramo tem um cenário próprio:
 
 Na barbearia, **Corte**, **Barba** e **Corte + barba** são serviços: aparecem na venda e no catálogo, mas não baixam estoque. **Pomada** e **Shampoo** são produtos controlados.
 
-Para voltar ao estado inicial: menu **Sua loja** → **Restaurar exemplo**. Ou, no console do navegador:
+Para voltar ao estado inicial: menu **Sua loja** → **Restaurar exemplo**. No modo nuvem isso recria o cenário do ramo no Supabase; no modo local, limpa o `localStorage`. No console do navegador, o equivalente local é:
 
 ```js
 localStorage.removeItem("meu-caixa:demo:v2");
@@ -124,31 +145,35 @@ location.reload();
 ```text
 Dockerfile                  # imagem multi-stage de produção (standalone)
 compose.yaml                # app + túnel opcional do Cloudflare
+.env.example                # modelo das credenciais do Supabase
 public/                     # arquivos estáticos
 src/
   app/
     layout.tsx              # fontes, providers, metadata e viewport
     page.tsx                # rota inicial (home)
     estoque/page.tsx        # rota de estoque
+    api/config/route.ts     # entrega URL + chave pública em runtime
     globals.css             # tokens, componentes utilitários e sheets
   components/
-    app-shell.tsx           # moldura responsiva + navegação
+    app-shell.tsx           # moldura responsiva + splash de abertura
     navigation.tsx          # topo no desktop e barra inferior no celular
     logo.tsx
     home-view.tsx           # composição da tela principal
     balance-card.tsx        # Entrou / Saiu / Sobrou
-    quick-actions.tsx       # vendeu, gastou, entrou estoque
+    quick-actions.tsx       # botão Registrar + atalhos de gasto e estoque
     pending-review-card.tsx # card de conferência da IA
     activity-feed.tsx       # extrato + alertas de estoque
     stock-view.tsx          # página de estoque
     action-provider.tsx     # estado global dos sheets
     sheet.tsx               # bottom sheet mobile / modal central no desktop
+    register-sheet.tsx      # hub: venda, gasto, foto da nota, áudio
+    receipt-sheet.tsx       # foto da nota → venda ou compra
     sale-sheet.tsx          # venda + confirmação de pendente + sucesso
     expense-sheet.tsx
     stock-entry-sheet.tsx
     transaction-detail-sheet.tsx
     product-edit-sheet.tsx
-    more-sheet.tsx
+    more-sheet.tsx          # ramo, conexão com a nuvem, restaurar exemplo
     money-input.tsx
     quantity-stepper.tsx
     payment-picker.tsx
@@ -157,9 +182,13 @@ src/
     types.ts                # domínio e enums (inclui SegmentId e trackStock)
     segments.ts             # perfis de ramo, produtos e exemplos
     seed.ts                 # monta a demo a partir do ramo escolhido
-    store.tsx               # estado, ações e totais (localStorage v2)
+    store.tsx               # estado, ações, totais e modo local/nuvem
     format.ts               # moeda, datas e saudação
     cn.ts
+    supabase/
+      config.ts             # normaliza URL, rejeita placeholders e service_role
+      client.ts             # cliente único + leitura de /api/config
+      workspace.ts          # sessão anônima, carga, seed e RPCs
 supabase/
   schema.sql                # schema de produção (tabelas, RLS e RPCs)
 ```
@@ -169,9 +198,10 @@ supabase/
 1. `src/app/page.tsx` renderiza `HomeView`.
 2. `src/components/home-view.tsx` monta o grid de duas colunas no desktop e a pilha no celular.
 3. `src/components/balance-card.tsx` mostra **Sobrou no caixa**, **Entrou hoje** e **Saiu hoje**.
-4. `src/components/quick-actions.tsx` abre venda, gasto e entrada de estoque.
-5. `src/components/pending-review-card.tsx` aparece só quando há rascunho de IA.
-6. `src/components/activity-feed.tsx` junta alertas de estoque, grupos por dia e o botão “Ver mais”.
+4. `src/components/quick-actions.tsx` abre o hub **Registrar** (venda, gasto, foto, áudio) e mantém os atalhos de gasto e estoque.
+5. `src/components/register-sheet.tsx` é o hub; cada opção abre uma sheet específica (`sale-sheet.tsx`, `expense-sheet.tsx`, `receipt-sheet.tsx`) ou cria um rascunho de áudio.
+6. `src/components/pending-review-card.tsx` aparece só quando há rascunho de IA.
+7. `src/components/activity-feed.tsx` junta alertas de estoque, grupos por dia e o botão “Ver mais”.
 
 ---
 
@@ -308,29 +338,29 @@ O card abre o mesmo formulário de venda, já pré-preenchido com o que a IA ent
 
 ### Hoje (MVP)
 
-- Persistência apenas no navegador, via `localStorage`.
-- Sem login, multiusuário ou sincronização entre dispositivos.
-- Sem upload real de áudio/foto; o botão “Simular áudio” cria um rascunho de exemplo.
+- Persistência real no **Supabase**, com sessão anônima por navegador e RLS por negócio.
+- Fallback automático para `localStorage` quando o Supabase não está configurado ou a conexão falha — a tela avisa qual modo está ativo.
+- Sem upload real de áudio/foto no servidor: a foto é lida no navegador (preview) e o lançamento é salvo com `source_type = image_recognition`; o áudio é simulando com um rascunho de exemplo.
 - Os três ramos usam dados fictícios e trocam o cenário inteiro ao serem selecionados.
-- Sem Supabase client instalado; o schema está pronto, mas a camada de dados ainda é local.
+- Sem multiusuário: uma sessão anônima = um negócio. Sair do navegador ou limpar os dados perde a sessão.
 
 ### Limitações conscientes
 
-- Limpar os dados do navegador apaga o histórico.
-- Não há backup nem acesso de outro celular.
-- O modo privado pode bloquear o `localStorage`.
-- Os dados da demo não são compartilhados entre navegadores.
+- A sessão anônima é por navegador; não há como recuperar o caixa em outro celular.
+- Limpar os dados do navegador apaga o vínculo com o negócio (o registro continua no banco, mas sem acesso).
+- O modo privado pode bloquear o `localStorage` e a sessão.
+- A foto ainda não é armazenada nem processada por OCR/Vision.
 
 ### Próximos passos para produção
 
-1. Criar o projeto no Supabase e rodar `supabase/schema.sql`.
-2. Ativar Auth (magic link ou OTP por e-mail) e criar o negócio via `create_business`.
-3. Trocar `src/lib/store.tsx` por uma camada de dados tipada com Supabase, mantendo a interface do context.
-4. Migrar venda, confirmação de IA e exclusão para as RPCs atômicas.
-5. Criar o bucket privado `ingestion` e as políticas de Storage.
-6. Implementar o pipeline de IA em Edge Functions.
+1. Criar o bucket privado `ingestion` e as políticas de Storage para áudios e fotos.
+2. Implementar o pipeline de IA em Edge Functions (Whisper/Vision) gravando em `ingestion_events`.
+3. Adicionar upgrade de conta anônima para e-mail/telefone, recuperando o mesmo negócio em outros aparelhos.
+4. Modelar boletos/contas a pagar, fornecedores e histórico de preço de compra.
+5. Separar caixa da empresa × pessoal (`withdrawal`/pró-labore).
+6. Análise de encalhe: capital parado por item sem saída há X dias.
 7. Transformar o app em PWA com fila offline e sincronização.
-8. Adicionar relatórios simples por período e exportação.
+8. Importação de planilha, QR Code/SEFAZ e e-mail de fornecedor (parser de XML).
 
 ---
 
