@@ -25,6 +25,7 @@ import {
   matchProductByName,
   matchSupplierByName,
   readReceiptPhoto,
+  tidyItemName,
   type ReceiptDraft,
 } from "@/lib/ocr";
 import {
@@ -48,6 +49,8 @@ interface EditableItem {
   unitCostInput: string;
   /** Produto existente que recebe a entrada. Vazio cria um produto novo. */
   productId?: string;
+  /** A pessoa escolheu o produto; não sobrescrever com a identificação automática. */
+  manualMatch?: boolean;
 }
 
 interface SuccessData {
@@ -79,6 +82,13 @@ function formatReceiptDate(value: string): string {
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return value;
   return `${day}/${month}/${year}`;
+}
+
+function productUnit(
+  product: { unit: string; unitPlural: string },
+  quantity: number,
+): string {
+  return quantity === 1 ? product.unit : product.unitPlural || product.unit;
 }
 
 export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
@@ -191,10 +201,13 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
           const matched = matchProductByName(item.name, products);
           return {
             key: nextItemKey(),
-            name: item.name,
+            // Se o produto já existe, usa o nome cadastrado. Senão, organiza o
+            // nome lido: "FARINHA DE TRIGO" vira "Farinha de trigo".
+            name: matched ? matched.name : tidyItemName(item.name),
             quantity: Math.max(1, item.quantity),
             unitCostInput: formatBRLInput(item.unitCostCents),
             productId: matched?.trackStock ? matched.id : undefined,
+            manualMatch: false,
           };
         })
       : [blankItem()];
@@ -322,6 +335,36 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
     setSaveError(null);
   }
 
+  function chooseItemProduct(key: string, id: string) {
+    const product = products.find(
+      (candidate) => candidate.id === id && candidate.trackStock,
+    );
+    updateItem(key, {
+      productId: product?.id,
+      ...(product ? { name: product.name } : {}),
+      // A escolha foi consciente: a identificação automática não deve
+      // desfazer nem "Criar produto novo" nem um produto escolhido à mão.
+      manualMatch: true,
+    });
+  }
+
+  function identifyItem(key: string) {
+    setItems((current) =>
+      current.map((item) => {
+        if (item.key !== key || item.manualMatch) return item;
+        const name = tidyItemName(item.name);
+        if (!name) return item;
+        const matched = matchProductByName(name, products);
+        return {
+          ...item,
+          name: matched ? matched.name : name,
+          productId: matched?.trackStock ? matched.id : undefined,
+        };
+      }),
+    );
+    setSaveError(null);
+  }
+
   function chooseSaleProduct(id: string) {
     const product = products.find((item) => item.id === id);
     setProductId(id);
@@ -342,6 +385,16 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
     (item) =>
       item.name.trim().length > 0 && parseMoneyInput(item.unitCostInput) > 0,
   );
+
+  const namedItems = items.filter((item) => item.name.trim().length > 0);
+  const linkedItemCount = namedItems.filter(
+    (item) =>
+      item.productId &&
+      products.some(
+        (product) => product.id === item.productId && product.trackStock,
+      ),
+  ).length;
+  const newItemCount = namedItems.length - linkedItemCount;
 
   const itemNameError =
     attempted && kind === "purchase" && validItems.length === 0
@@ -836,12 +889,27 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
               </div>
 
               <div>
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="field-label mb-0">Itens da nota</span>
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div>
+                    <span className="field-label mb-0">Itens da nota</span>
+                    <p className="mt-0.5 text-[0.6875rem] text-muted">
+                      {namedItems.length === 1
+                        ? "1 item"
+                        : `${namedItems.length} itens`}
+                      {" · "}
+                      {linkedItemCount === 1
+                        ? "1 no estoque"
+                        : `${linkedItemCount} no estoque`}
+                      {" · "}
+                      {newItemCount === 1
+                        ? "1 novo"
+                        : `${newItemCount} novos`}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setItems((current) => [...current, blankItem()])}
-                    className="inline-flex items-center gap-1 text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
+                    className="inline-flex flex-none items-center gap-1 text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
                   >
                     <Plus className="size-3.5" strokeWidth={2.4} />
                     Adicionar item
@@ -851,6 +919,15 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
                 <div className="space-y-2.5">
                   {items.map((item, index) => {
                     const unitCostCents = parseMoneyInput(item.unitCostInput);
+                    const linkedProduct = item.productId
+                      ? products.find(
+                          (product) =>
+                            product.id === item.productId && product.trackStock,
+                        )
+                      : undefined;
+                    const nextStock = linkedProduct
+                      ? linkedProduct.stock + item.quantity
+                      : 0;
                     return (
                       <div
                         key={item.key}
@@ -862,8 +939,13 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
                             onChange={(event) =>
                               updateItem(item.key, {
                                 name: event.target.value,
+                                // Ao editar o nome, a identificação anterior
+                                // deixa de valer até a próxima conferência.
+                                productId: undefined,
+                                manualMatch: false,
                               })
                             }
+                            onBlur={() => identifyItem(item.key)}
                             placeholder={`Item ${index + 1}`}
                             className="text-input h-11 min-w-0 flex-1"
                             aria-label={`Nome do item ${index + 1}`}
@@ -877,6 +959,41 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
                           >
                             <Trash2 className="size-4" strokeWidth={2} />
                           </button>
+                        </div>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[0.625rem] font-bold",
+                              linkedProduct
+                                ? "bg-sage-soft text-sage-dark"
+                                : "bg-terracotta-soft text-terracotta-dark",
+                            )}
+                          >
+                            {linkedProduct ? (
+                              <Check className="size-3" strokeWidth={2.6} />
+                            ) : (
+                              <Plus className="size-3" strokeWidth={2.6} />
+                            )}
+                            {linkedProduct ? "No estoque" : "Produto novo"}
+                          </span>
+                          {linkedProduct ? (
+                            <span className="text-[0.6875rem] text-muted">
+                              Vai somar em{" "}
+                              <span className="font-semibold text-ink">
+                                {linkedProduct.name}
+                              </span>
+                              {": "}
+                              <span className="tabular">
+                                {linkedProduct.stock} → {nextStock}
+                              </span>{" "}
+                              {productUnit(linkedProduct, nextStock)}
+                            </span>
+                          ) : (
+                            <span className="text-[0.6875rem] text-muted">
+                              Vai entrar como um produto novo.
+                            </span>
+                          )}
                         </div>
 
                         <div className="mt-2 flex items-end gap-2">
@@ -923,26 +1040,35 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
                             htmlFor={`receipt-item-product-${item.key}`}
                             className="mb-1 block text-[0.625rem] font-bold uppercase tracking-[0.08em] text-muted"
                           >
-                            No estoque
+                            {linkedProduct
+                              ? "Produto no estoque"
+                              : "Produto no estoque (opcional)"}
                           </label>
                           <select
                             id={`receipt-item-product-${item.key}`}
                             value={item.productId ?? ""}
                             onChange={(event) =>
-                              updateItem(item.key, {
-                                productId: event.target.value || undefined,
-                              })
+                              chooseItemProduct(item.key, event.target.value)
                             }
                             className="text-input h-11 text-xs"
                             aria-label={`Produto no estoque para o item ${index + 1}`}
                           >
                             <option value="">Criar produto novo</option>
-                            {stockProducts.map((product) => (
-                              <option key={product.id} value={product.id}>
-                                {product.name} · restam {product.stock}
-                              </option>
-                            ))}
+                            {stockProducts.length ? (
+                              <optgroup label="Produtos já cadastrados">
+                                {stockProducts.map((product) => (
+                                  <option key={product.id} value={product.id}>
+                                    {product.name} · restam {product.stock}{" "}
+                                    {productUnit(product, product.stock)}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ) : null}
                           </select>
+                          <p className="mt-1 text-[0.625rem] text-muted">
+                            Escolha um produto para somar no estoque. Se não
+                            existir, deixe em “Criar produto novo”.
+                          </p>
                         </div>
                       </div>
                     );

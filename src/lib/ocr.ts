@@ -356,6 +356,26 @@ function cleanItemName(raw: string): string {
     .trim();
 }
 
+/**
+ * Deixa nomes lidos em caixa alta mais legíveis: "FARINHA DE TRIGO" vira
+ * "Farinha de trigo". Nomes que já vieram com maiúsculas e minúsculas são
+ * preservados como estão.
+ */
+export function tidyItemName(raw: string): string {
+  const cleaned = raw.replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  // Só mexe quando não existe nenhuma letra minúscula.
+  if (/[a-zà-ÿ]/.test(cleaned)) return cleaned;
+
+  return cleaned
+    .toLowerCase()
+    .split(" ")
+    .map((word, index) =>
+      index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word,
+    )
+    .join(" ");
+}
+
 function isPlausibleItemName(name: string): boolean {
   if (name.length < 2 || name.length > 80) return false;
   if (!/[A-Za-zÀ-ÿ]{2,}/.test(name)) return false;
@@ -373,7 +393,6 @@ interface ParsedItem {
 
 function parseItems(lines: string[]): ParsedItem[] {
   const items: ParsedItem[] = [];
-  const seen = new Set<string>();
 
   const add = (
     rawName: string,
@@ -382,10 +401,18 @@ function parseItems(lines: string[]): ParsedItem[] {
   ) => {
     const name = cleanItemName(rawName);
     if (!isPlausibleItemName(name)) return;
-    const key = normalizeText(name);
-    if (seen.has(key)) return;
     if (totalCents < 1 || quantity < 1) return;
-    seen.add(key);
+
+    // O mesmo produto pode aparecer em mais de uma linha (lotes diferentes).
+    // Soma as quantidades em vez de descartar a segunda leitura.
+    const key = normalizeText(name);
+    const existing = items.find((item) => normalizeText(item.name) === key);
+    if (existing) {
+      existing.quantity = Math.min(999, existing.quantity + Math.round(quantity));
+      existing.totalCents += totalCents;
+      return;
+    }
+
     items.push({
       name,
       quantity: Math.min(999, Math.round(quantity)),
@@ -393,8 +420,15 @@ function parseItems(lines: string[]): ParsedItem[] {
     });
   };
 
+  // Nome que apareceu sozinho na linha anterior. Em muitos cupons o nome do
+  // produto fica em uma linha e "2 x 40,00 = 80,00" na seguinte.
+  let pendingName: string | null = null;
+
   for (const line of lines) {
-    if (NON_ITEM.test(line) || HEADER_SKIP.test(line)) continue;
+    if (NON_ITEM.test(line) || HEADER_SKIP.test(line)) {
+      pendingName = null;
+      continue;
+    }
 
     const withUnitAndTotal = new RegExp(
       `^(.+?)\\s+(\\d{1,3})(?!\\d)\\s*${UNIT_SOURCE}\\s*${OPERATOR_SOURCE}\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})\\s*(?:=|→)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})$`,
@@ -406,6 +440,7 @@ function parseItems(lines: string[]): ParsedItem[] {
       const totalCents = parseMoneyToken(withUnitAndTotal[4]);
       if (quantity >= 1 && totalCents) {
         add(withUnitAndTotal[1], quantity, totalCents);
+        pendingName = null;
         continue;
       }
     }
@@ -420,7 +455,46 @@ function parseItems(lines: string[]): ParsedItem[] {
       const totalCents = parseMoneyToken(withQuantity[3]);
       if (quantity >= 1 && totalCents) {
         add(withQuantity[1], quantity, totalCents);
+        pendingName = null;
         continue;
+      }
+    }
+
+    // Linha só com quantidade e preço, sem nome. Usa o nome da linha anterior.
+    if (pendingName) {
+      const leadingQuantity = new RegExp(
+        `^(\\d{1,3})(?!\\d)\\s*${UNIT_SOURCE}\\s*(x|×|@)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})(?:\\s*(?:=|→)\\s*(?:R\\$\\s*)?(${MONEY_SOURCE}))?$`,
+        "i",
+      ).exec(line);
+
+      if (leadingQuantity) {
+        const quantity = Number(leadingQuantity[1]);
+        const unitCents = parseMoneyToken(leadingQuantity[3]);
+        const explicitTotal = leadingQuantity[4]
+          ? parseMoneyToken(leadingQuantity[4])
+          : undefined;
+        const hasOperator = Boolean(leadingQuantity[2]);
+        const totalCents =
+          explicitTotal ??
+          (hasOperator && unitCents ? unitCents * quantity : unitCents);
+        if (quantity >= 1 && totalCents) {
+          add(pendingName, quantity, totalCents);
+          pendingName = null;
+          continue;
+        }
+      }
+
+      const onlyMoney = new RegExp(
+        `^(?:R\\$\\s*)?(${MONEY_SOURCE})$`,
+        "i",
+      ).exec(line);
+      if (onlyMoney) {
+        const totalCents = parseMoneyToken(onlyMoney[1]);
+        if (totalCents) {
+          add(pendingName, 1, totalCents);
+          pendingName = null;
+          continue;
+        }
       }
     }
 
@@ -430,8 +504,22 @@ function parseItems(lines: string[]): ParsedItem[] {
     ).exec(line);
     if (simple) {
       const totalCents = parseMoneyToken(simple[2]);
-      if (totalCents) add(simple[1], 1, totalCents);
+      if (totalCents) {
+        add(simple[1], 1, totalCents);
+        pendingName = null;
+        continue;
+      }
     }
+
+    // Nome sem preço: guarda para a próxima linha, que pode trazer a
+    // quantidade e o valor.
+    const possibleName = cleanItemName(line);
+    if (!moneyTokens(line).length && isPlausibleItemName(possibleName)) {
+      pendingName = line;
+      continue;
+    }
+
+    pendingName = null;
   }
 
   return items;
@@ -483,6 +571,71 @@ function tokenize(value: string): string[] {
     .filter((token) => token.length >= 3 && !MATCH_STOPWORDS.has(token));
 }
 
+/** Distância de edição simples, usada para tolerar erros pequenos do OCR. */
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        current[j - 1] + 1,
+        previous[j] + 1,
+        previous[j - 1] + cost,
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length];
+}
+
+/**
+ * Semelhança entre duas palavras. Exige pelo menos 80% de coincidência para
+ * aceitar um erro de OCR, como "AGUCAR" x "AÇÚCAR".
+ */
+function tokenSimilarity(source: string, target: string): number {
+  if (source === target) return 1;
+  if (source.length < 4 || target.length < 4) return 0;
+
+  const shorter = source.length <= target.length ? source : target;
+  const longer = source.length <= target.length ? target : source;
+  if (longer.startsWith(shorter) && shorter.length / longer.length >= 0.6) {
+    return 0.9;
+  }
+
+  const distance = editDistance(source, target);
+  const similarity = 1 - distance / Math.max(source.length, target.length);
+  return similarity >= 0.8 ? similarity : 0;
+}
+
+/** Todos os tokens do produto precisam aparecer no item lido. */
+function matchTokenSets(source: string[], target: string[]): number {
+  const used = new Set<number>();
+  let total = 0;
+
+  for (const token of target) {
+    let bestIndex = -1;
+    let bestScore = 0;
+    source.forEach((candidate, index) => {
+      if (used.has(index)) return;
+      const score = tokenSimilarity(candidate, token);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+    if (bestIndex < 0 || bestScore < 0.8) return 0;
+    used.add(bestIndex);
+    total += bestScore;
+  }
+
+  return total / target.length;
+}
+
 export function matchSupplierByName(
   name: string | undefined,
   suppliers: Supplier[],
@@ -513,10 +666,10 @@ export function matchSupplierByName(
 /**
  * Casa o nome lido na nota com um produto já cadastrado.
  *
- * A regra é deliberadamente conservadora: é melhor criar um produto novo do
- * que somar estoque no item errado. Por isso, o nome cadastrado precisa estar
- * inteiro dentro do nome lido. "Bolo de chocolate" não casa com "Chocolate ao
- * leite" só porque os dois têm a palavra "chocolate".
+ * A regra continua conservadora: é melhor criar um produto novo do que somar
+ * estoque no item errado. "Bolo de chocolate" não casa com "Chocolate ao
+ * leite" só porque os dois têm a palavra "chocolate". Erros pequenos de OCR,
+ * como "AGUCAR" x "AÇÚCAR", são aceitos.
  */
 export function matchProductByName(
   name: string,
@@ -540,17 +693,16 @@ export function matchProductByName(
       // Um nome com duas ou mais palavras só casa quando todas aparecem no
       // item lido. "Bolo de chocolate" casa com "Bolo de chocolate caseiro",
       // mas não com "Chocolate ao leite".
-      const hits = target.filter((token) => source.includes(token)).length;
-      if (hits !== target.length) continue;
-      score = 1000 + target.length * 10;
-    } else if (source.length === 1 && source[0] === target[0]) {
-      score = 500;
+      const similarity = matchTokenSets(source, target);
+      if (similarity === 0) continue;
+      score = 1000 + similarity * 100 + target.length * 10;
     } else {
       // Produto de uma palavra dentro de um nome maior: só aceita quando é a
-      // primeira palavra, como "Açúcar" em "Açúcar refinado". A tela de
-      // revisão mostra qual produto será usado e permite trocar.
-      if (source[0] !== target[0]) continue;
-      score = 300;
+      // primeira palavra, como "Brigadeiro" em "Brigadeiro gourmet". A tela
+      // de revisão mostra qual produto será usado e permite trocar.
+      const similarity = tokenSimilarity(source[0], target[0]);
+      if (similarity === 0) continue;
+      score = 500 + similarity * 100;
     }
 
     if (!best || score > best.score) best = { product, score };

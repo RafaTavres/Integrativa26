@@ -139,7 +139,7 @@ Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md
 - **Retirada** — dinheiro que você tira do caixa para uso pessoal. Entra em “Saiu” e no extrato com o rótulo **retirada**, mas não é despesa do negócio nem conta a pagar.
 - **Importar planilha** — CSV, TSV ou XLSX com vendas, gastos, compras, contas e retiradas. Mostra prévia, valida linha por linha e não mexe no estoque atual. As compras importadas alimentam o histórico de preços por fornecedor.
 - **Análises** — previsão de pagamento, comparação de preço do mesmo item entre fornecedores, itens encalhados com o valor parado e resumo de retiradas.
-- **Foto da nota** — tira ou escolhe a foto do cupom/comprovante; o app lê o texto no próprio aparelho com **Tesseract.js em português**, separa fornecedor, itens, quantidade, custo, total, data, CNPJ e forma de pagamento, e **só então** abre a tela de conferência. Você corrige o que precisar, escolhe entre **compra** (entra no estoque e no custo) e **venda** (baixa estoque e entra no caixa) e confirma. A imagem não é enviada nem guardada no servidor; o lançamento fica com `source_type = image_recognition`. Se a leitura não render, **Prefiro digitar sem foto** abre o mesmo formulário vazio e salva como `manual`.
+- **Foto da nota** — tira ou escolhe a foto do cupom/comprovante; o app lê o texto no próprio aparelho com **Tesseract.js em português**, separa fornecedor, itens, quantidade, custo, total, data, CNPJ e forma de pagamento, e **só então** abre a tela de conferência. Cada item é comparado com o estoque: os que já existem aparecem como **No estoque**, com o nome cadastrado, e os demais como **Produto novo**. Você corrige o que precisar, escolhe entre **compra** (entra no estoque e no custo) e **venda** (baixa estoque e entra no caixa) e confirma. A imagem não é enviada nem guardada no servidor; o lançamento fica com `source_type = image_recognition`. Se a leitura não render, **Prefiro digitar sem foto** abre o mesmo formulário vazio e salva como `manual`.
 - **Áudio** — grava de verdade pelo microfone do navegador (`MediaRecorder`), transcreve em português com a Web Speech API quando disponível e permite corrigir o texto. O rascunho nasce como `pending_review` com `source_type = audio_transcription`; o áudio fica só na memória da página e não é enviado ao servidor.
 - **Entrada rápida de estoque** — produto, quantidade e custo. Continua disponível para repor um item sem passar pela compra completa.
 - **Radar de estoque** — produtos no mínimo ou zerados aparecem no topo do extrato e na página de estoque/produtos, com ação direta para repor.
@@ -452,7 +452,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - A sessão anônima é por navegador; não há como recuperar o caixa em outro celular.
 - Limpar os dados do navegador apaga o vínculo com o negócio (o registro continua no banco, mas sem acesso).
 - O modo privado pode bloquear o `localStorage` e a sessão.
-- A foto ainda não é armazenada nem processada por OCR/Vision.
+- A foto não é armazenada: o OCR de texto roda no próprio navegador e a imagem não sai do aparelho. O reconhecimento é de texto, não de imagem (não identifica objetos).
 - O WhatsApp ainda não está conectado: a tela de integrações só salva o número e as preferências neste navegador. E-mail/XML e QR Code também não têm conector ativo; a tabela e o contrato de entrada já estão prontos, mas a integração fica para a próxima etapa.
 
 ### Próximos passos para produção
