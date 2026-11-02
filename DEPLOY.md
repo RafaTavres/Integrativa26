@@ -8,6 +8,7 @@ O app é **Next.js + Supabase**. Não existe backend próprio além de duas rota
 | --- | --- |
 | `GET /api/config` | Entrega URL e chave pública do Supabase em tempo de execução. |
 | `GET /api/health` | Health check (`{"ok":true,"supabase":"configured"}`). |
+| `GET /api/integrations` | Contrato público para WhatsApp, e-mail/XML, QR Code e demais conectores. |
 
 Como a configuração é lida a cada requisição, **trocar de projeto Supabase não exige rebuild**.
 
@@ -16,7 +17,7 @@ Como a configuração é lida a cada requisição, **trocar de projeto Supabase 
 ## 1. Preparar o Supabase (uma vez)
 
 1. Crie um projeto em [supabase.com](https://supabase.com) (região `South America (São Paulo)` reduz a latência).
-2. Abra **SQL Editor** e rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Ele cria tabelas, enums, RLS, a view `daily_totals` e as RPCs.
+2. Abra **SQL Editor** e rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Ele cria tabelas, enums, RLS, a view `daily_totals` e as RPCs. O script é idempotente: pode ser rodado de novo para aplicar as tabelas de **fornecedores, compras e contas a pagar** em um projeto que já existia.
 3. Ative o login anônimo em **Authentication → Sign In / Providers → Anonymous sign-ins**.
 4. Em **Authentication → URL Configuration**, defina:
    - **Site URL**: o endereço final do app (ex.: `https://caixa.seudominio.com`).
@@ -34,6 +35,9 @@ No SQL Editor:
 ```sql
 select count(*) as negocios from public.businesses;
 select count(*) as itens from public.products;
+select count(*) as fornecedores from public.suppliers;
+select count(*) as contas from public.bills;
+select count(*) as compras from public.purchases;
 ```
 
 Se as tabelas existirem, o schema foi aplicado.
@@ -161,6 +165,9 @@ git pull
 # guarda a imagem atual para rollback
 docker tag meu-caixa:latest meu-caixa:backup
 
+# se o schema mudou (novas tabelas/colunas), rode de novo no SQL Editor:
+# supabase/schema.sql
+
 docker compose up -d --build
 curl http://127.0.0.1:3000/api/health
 ```
@@ -232,10 +239,11 @@ Os nomes antigos `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` ai
 
 ## 6. Checklist antes de divulgar
 
-- [ ] `supabase/schema.sql` aplicado no projeto de produção
+- [ ] `supabase/schema.sql` aplicado no projeto de produção (inclui fornecedores, compras, contas e ingestão)
 - [ ] **Anonymous sign-ins** ativado
 - [ ] `SUPABASE_URL` e `SUPABASE_ANON_KEY` configuradas no host
 - [ ] `/api/health` responde `"supabase":"configured"`
+- [ ] `/api/integrations` responde com o contrato (versão 1)
 - [ ] HTTPS funcionando (Vercel/Caddy)
 - [ ] Domínio final cadastrado na **Site URL** do Supabase
 - [ ] Porta do app não exposta publicamente no VPS

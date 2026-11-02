@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   ChevronDown,
   ChevronUp,
+  HandCoins,
   ReceiptText,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
@@ -20,19 +21,35 @@ const SHORT_SOURCE: Record<SourceType, string> = {
   audio_transcription: "áudio",
   image_recognition: "foto",
   whatsapp_import: "WhatsApp",
+  email_import: "e-mail",
+  qr_code: "QR Code",
+  spreadsheet_import: "planilha",
 };
 
 function TransactionRow({ transaction }: { transaction: Transaction }) {
   const { openTransaction } = useActions();
   const isSale = transaction.kind === "sale";
+  const isWithdrawal = transaction.kind === "withdrawal";
   const meta = [
     transaction.quantity && transaction.quantity > 1
       ? `${transaction.quantity}×`
       : null,
+    isWithdrawal ? "retirada" : null,
     formatTime(transaction.occurredAt),
   ]
     .filter(Boolean)
     .join(" · ");
+
+  const iconTone = isSale
+    ? "bg-sage-soft text-sage-dark"
+    : isWithdrawal
+      ? "bg-mustard-soft text-mustard-dark"
+      : "bg-terracotta-soft text-terracotta-dark";
+  const amountTone = isSale
+    ? "text-sage-dark"
+    : isWithdrawal
+      ? "text-mustard-dark"
+      : "text-ink";
 
   return (
     <button
@@ -41,14 +58,12 @@ function TransactionRow({ transaction }: { transaction: Transaction }) {
       className="group flex w-full items-center gap-3 rounded-[4px] border border-line bg-paper p-3 text-left transition-colors hover:border-sand-dark hover:bg-[#fffaf3]"
     >
       <span
-        className={
-          isSale
-            ? "grid size-9 flex-none place-items-center rounded-[4px] bg-sage-soft text-sage-dark"
-            : "grid size-9 flex-none place-items-center rounded-[4px] bg-terracotta-soft text-terracotta-dark"
-        }
+        className={`grid size-9 flex-none place-items-center rounded-[4px] ${iconTone}`}
       >
         {isSale ? (
           <ArrowDownLeft className="size-4" strokeWidth={2.1} />
+        ) : isWithdrawal ? (
+          <HandCoins className="size-4" strokeWidth={2.1} />
         ) : (
           <ArrowUpRight className="size-4" strokeWidth={2.1} />
         )}
@@ -63,11 +78,7 @@ function TransactionRow({ transaction }: { transaction: Transaction }) {
       </span>
       <span className="flex-none text-right">
         <span
-          className={
-            isSale
-              ? "block text-[0.875rem] font-bold tracking-tight text-sage-dark tabular"
-              : "block text-[0.875rem] font-bold tracking-tight text-ink tabular"
-          }
+          className={`block text-[0.875rem] font-bold tracking-tight tabular ${amountTone}`}
         >
           {isSale ? "+" : "−"} {formatBRL(transaction.amountCents)}
         </span>

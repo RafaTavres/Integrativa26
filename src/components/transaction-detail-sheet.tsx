@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, Trash2, Undo2 } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  HandCoins,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { Sheet } from "./sheet";
 import { useApp } from "@/lib/store";
 import { useToast } from "./toast";
@@ -9,6 +15,7 @@ import { dayLabel, formatBRL, formatTime } from "@/lib/format";
 import {
   PAYMENT_METHOD_LABELS,
   SOURCE_TYPE_LABELS,
+  TRANSACTION_KIND_LABELS,
 } from "@/lib/types";
 
 interface TransactionDetailSheetProps {
@@ -20,7 +27,7 @@ export function TransactionDetailSheet({
   transactionId,
   onClose,
 }: TransactionDetailSheetProps) {
-  const { transactions, deleteTransaction } = useApp();
+  const { transactions, suppliers, deleteTransaction } = useApp();
   const { toast } = useToast();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -29,6 +36,10 @@ export function TransactionDetailSheet({
   if (!transaction) return null;
 
   const isSale = transaction.kind === "sale";
+  const isWithdrawal = transaction.kind === "withdrawal";
+  const supplier = transaction.supplierId
+    ? suppliers.find((item) => item.id === transaction.supplierId)
+    : undefined;
   const canRestoreStock =
     isSale &&
     transaction.status === "processed" &&
@@ -37,6 +48,8 @@ export function TransactionDetailSheet({
     transaction.paymentMethod && transaction.paymentMethod !== "other";
   const showSource = transaction.sourceType !== "manual";
   const showQuantity = Boolean(transaction.quantity && transaction.quantity > 1);
+  const showRows =
+    showQuantity || showPayment || showSource || Boolean(supplier);
 
   async function handleDelete() {
     if (deleting) return;
@@ -55,19 +68,32 @@ export function TransactionDetailSheet({
     }
   }
 
+  const iconTone = isSale
+    ? "bg-sage-soft text-sage-dark"
+    : isWithdrawal
+      ? "bg-mustard-soft text-mustard-dark"
+      : "bg-terracotta-soft text-terracotta-dark";
+  const amountTone = isSale
+    ? "text-sage-dark"
+    : isWithdrawal
+      ? "text-mustard-dark"
+      : "text-ink";
+
   return (
-    <Sheet title={isSale ? "Venda" : "Gasto"} onClose={onClose}>
+    <Sheet
+      title={TRANSACTION_KIND_LABELS[transaction.kind]}
+      eyebrow={isWithdrawal ? "Retirada" : undefined}
+      onClose={onClose}
+    >
       <div className="animate-rise">
         <div className="flex items-start gap-3">
           <span
-            className={
-              isSale
-                ? "grid size-11 flex-none place-items-center rounded-[4px] bg-sage-soft text-sage-dark"
-                : "grid size-11 flex-none place-items-center rounded-[4px] bg-terracotta-soft text-terracotta-dark"
-            }
+            className={`grid size-11 flex-none place-items-center rounded-[4px] ${iconTone}`}
           >
             {isSale ? (
               <ArrowDownLeft className="size-5" strokeWidth={1.9} />
+            ) : isWithdrawal ? (
+              <HandCoins className="size-5" strokeWidth={1.9} />
             ) : (
               <ArrowUpRight className="size-5" strokeWidth={1.9} />
             )}
@@ -84,22 +110,33 @@ export function TransactionDetailSheet({
         </div>
 
         <p
-          className={
-            isSale
-              ? "mt-5 text-[2.5rem] font-extrabold leading-none tracking-tight text-sage-dark tabular"
-              : "mt-5 text-[2.5rem] font-extrabold leading-none tracking-tight text-ink tabular"
-          }
+          className={`mt-5 text-[2.5rem] font-extrabold leading-none tracking-tight tabular ${amountTone}`}
         >
           {isSale ? "+" : "−"} {formatBRL(transaction.amountCents)}
         </p>
 
-        {showQuantity || showPayment || showSource ? (
+        {isWithdrawal ? (
+          <p className="mt-3 rounded-[4px] border border-mustard/35 bg-mustard-soft/70 p-3 text-[0.6875rem] leading-relaxed text-ink/80">
+            Retirada é dinheiro que saiu do caixa para você. Não entra como
+            gasto do negócio nem vira conta a pagar, mas aparece nas análises.
+          </p>
+        ) : null}
+
+        {showRows ? (
           <dl className="mt-5 divide-y divide-line rounded-[4px] border border-line bg-cream text-sm">
             {showQuantity ? (
               <div className="flex items-center justify-between gap-4 px-4 py-3">
                 <dt className="text-muted">Quantidade</dt>
                 <dd className="font-semibold text-ink">
                   {transaction.quantity}
+                </dd>
+              </div>
+            ) : null}
+            {supplier ? (
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <dt className="text-muted">Fornecedor</dt>
+                <dd className="text-right font-semibold text-ink">
+                  {supplier.name}
                 </dd>
               </div>
             ) : null}

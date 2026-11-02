@@ -7,11 +7,15 @@ import {
   Check,
   Cloud,
   CloudOff,
+  FileSpreadsheet,
   Mic,
+  ReceiptText,
   RefreshCw,
   RotateCcw,
   Scissors,
   Shirt,
+  TrendingUp,
+  Truck,
 } from "lucide-react";
 import { Sheet } from "./sheet";
 import { useApp } from "@/lib/store";
@@ -115,7 +119,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
 
   const connectionMessage =
     mode === "cloud"
-      ? "Uma sessão anônima do Supabase guarda suas vendas, gastos e estoque no banco."
+      ? "Uma sessão anônima do Supabase guarda suas vendas, gastos, estoque, compras e contas no banco."
       : cloudStatus === "connecting"
         ? "Falando com o Supabase para abrir seu caixa."
         : cloudStatus === "error"
@@ -199,6 +203,50 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
           <p className="mt-2 text-[0.6875rem] leading-snug text-muted">
             Trocar de ramo recomeça os dados deste exemplo.
           </p>
+        </section>
+
+        <section>
+          <p className="eyebrow mb-2">Atalhos</p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              {
+                label: "Fornecedores",
+                icon: Truck,
+                href: "/fornecedores",
+              },
+              {
+                label: "Contas a pagar",
+                icon: ReceiptText,
+                href: "/contas",
+              },
+              {
+                label: "Análises",
+                icon: TrendingUp,
+                href: "/analises",
+              },
+              {
+                label: "Importar planilha",
+                icon: FileSpreadsheet,
+                href: "/importar",
+              },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.href}
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    router.push(item.href);
+                  }}
+                  className="btn btn-secondary h-auto flex-col items-start gap-2 px-3 py-3 text-left text-xs"
+                >
+                  <Icon className="size-4 text-terracotta-dark" strokeWidth={2} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
         </section>
 
         <section>

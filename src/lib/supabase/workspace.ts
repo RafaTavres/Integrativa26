@@ -2,14 +2,18 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SEGMENTS, isSegmentId } from "../segments";
+import type { ImportRow, ImportSummary } from "../import";
 import type {
+  Bill,
   Business,
   DemoState,
   InventoryLog,
   PaymentMethod,
   Product,
+  Purchase,
   SegmentId,
   SourceType,
+  Supplier,
   Transaction,
 } from "../types";
 
@@ -62,6 +66,11 @@ function toCloudError(error: PostgrestLikeError, fallback: string): CloudError {
   });
 }
 
+function optionalText(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 // ---------------------------------------------------------------------------
 // Linhas do banco
 // ---------------------------------------------------------------------------
@@ -84,6 +93,16 @@ interface ProductRow {
   cost_cents: number;
   price_cents: number;
   track_stock: boolean;
+  supplier_id: string | null;
+  created_at: string;
+}
+
+interface SupplierRow {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
   created_at: string;
 }
 
@@ -94,6 +113,7 @@ interface TransactionRow {
   amount_cents: number;
   quantity: number | string | null;
   product_id: string | null;
+  supplier_id: string | null;
   payment_method: PaymentMethod | null;
   source_type: SourceType;
   status: Transaction["status"];
@@ -114,6 +134,36 @@ interface InventoryLogRow {
   source_type: SourceType;
   status: InventoryLog["status"];
   occurred_at: string;
+}
+
+interface BillRow {
+  id: string;
+  supplier_id: string | null;
+  description: string;
+  amount_cents: number;
+  due_date: string;
+  status: Bill["status"];
+  paid_at: string | null;
+  payment_method: PaymentMethod | null;
+  transaction_id: string | null;
+  source_type: SourceType;
+  created_at: string;
+}
+
+interface PurchaseRow {
+  id: string;
+  supplier_id: string | null;
+  product_id: string | null;
+  product_name: string;
+  quantity: number | string;
+  unit_cost_cents: number;
+  total_cents: number;
+  bill_id: string | null;
+  transaction_id: string | null;
+  inventory_log_id: string | null;
+  source_type: SourceType;
+  occurred_at: string;
+  created_at: string;
 }
 
 function toNumber(value: number | string | null | undefined): number {
@@ -143,6 +193,18 @@ function mapProduct(row: ProductRow): Product {
     costCents: toNumber(row.cost_cents),
     priceCents: toNumber(row.price_cents),
     trackStock: row.track_stock !== false,
+    supplierId: row.supplier_id ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+function mapSupplier(row: SupplierRow): Supplier {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone ?? undefined,
+    email: row.email ?? undefined,
+    notes: row.notes ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -158,6 +220,7 @@ function mapTransaction(
     amountCents: toNumber(row.amount_cents),
     quantity: row.quantity === null ? undefined : toNumber(row.quantity),
     productId: row.product_id ?? undefined,
+    supplierId: row.supplier_id ?? undefined,
     paymentMethod: row.payment_method ?? undefined,
     sourceType: row.source_type,
     status: row.status,
@@ -183,6 +246,40 @@ function mapInventoryLog(row: InventoryLogRow): InventoryLog {
     sourceType: row.source_type,
     status: row.status,
     occurredAt: row.occurred_at,
+  };
+}
+
+function mapBill(row: BillRow): Bill {
+  return {
+    id: row.id,
+    supplierId: row.supplier_id ?? undefined,
+    description: row.description,
+    amountCents: toNumber(row.amount_cents),
+    dueDate: row.due_date,
+    status: row.status,
+    paidAt: row.paid_at ?? undefined,
+    paymentMethod: row.payment_method ?? undefined,
+    transactionId: row.transaction_id ?? undefined,
+    sourceType: row.source_type,
+    createdAt: row.created_at,
+  };
+}
+
+function mapPurchase(row: PurchaseRow): Purchase {
+  return {
+    id: row.id,
+    supplierId: row.supplier_id ?? undefined,
+    productId: row.product_id ?? undefined,
+    productName: row.product_name,
+    quantity: toNumber(row.quantity),
+    unitCostCents: toNumber(row.unit_cost_cents),
+    totalCents: toNumber(row.total_cents),
+    billId: row.bill_id ?? undefined,
+    transactionId: row.transaction_id ?? undefined,
+    inventoryLogId: row.inventory_log_id ?? undefined,
+    sourceType: row.source_type,
+    occurredAt: row.occurred_at,
+    createdAt: row.created_at,
   };
 }
 
@@ -253,35 +350,61 @@ export async function loadWorkspace(
   client: SupabaseClient,
   businessId: string,
 ): Promise<Workspace> {
-  const [businessResult, productsResult, transactionsResult, logsResult] =
-    await Promise.all([
-      client
-        .from("businesses")
-        .select("id, name, owner_name, city, segment")
-        .eq("id", businessId)
-        .maybeSingle(),
-      client
-        .from("products")
-        .select(
-          "id, name, unit, unit_plural, stock, min_stock, cost_cents, price_cents, track_stock, created_at",
-        )
-        .eq("business_id", businessId)
-        .order("name", { ascending: true }),
-      client
-        .from("transactions")
-        .select(
-          "id, kind, description, amount_cents, quantity, product_id, payment_method, source_type, status, raw_input, ai_confidence, occurred_at, created_at, reviewed_at",
-        )
-        .eq("business_id", businessId)
-        .order("occurred_at", { ascending: false }),
-      client
-        .from("inventory_logs")
-        .select(
-          "id, product_id, direction, quantity, unit_cost_cents, transaction_id, source_type, status, occurred_at",
-        )
-        .eq("business_id", businessId)
-        .order("occurred_at", { ascending: false }),
-    ]);
+  const [
+    businessResult,
+    productsResult,
+    transactionsResult,
+    logsResult,
+    suppliersResult,
+    purchasesResult,
+    billsResult,
+  ] = await Promise.all([
+    client
+      .from("businesses")
+      .select("id, name, owner_name, city, segment")
+      .eq("id", businessId)
+      .maybeSingle(),
+    client
+      .from("products")
+      .select(
+        "id, name, unit, unit_plural, stock, min_stock, cost_cents, price_cents, track_stock, supplier_id, created_at",
+      )
+      .eq("business_id", businessId)
+      .order("name", { ascending: true }),
+    client
+      .from("transactions")
+      .select(
+        "id, kind, description, amount_cents, quantity, product_id, supplier_id, payment_method, source_type, status, raw_input, ai_confidence, occurred_at, created_at, reviewed_at",
+      )
+      .eq("business_id", businessId)
+      .order("occurred_at", { ascending: false }),
+    client
+      .from("inventory_logs")
+      .select(
+        "id, product_id, direction, quantity, unit_cost_cents, transaction_id, source_type, status, occurred_at",
+      )
+      .eq("business_id", businessId)
+      .order("occurred_at", { ascending: false }),
+    client
+      .from("suppliers")
+      .select("id, name, phone, email, notes, created_at")
+      .eq("business_id", businessId)
+      .order("name", { ascending: true }),
+    client
+      .from("purchases")
+      .select(
+        "id, supplier_id, product_id, product_name, quantity, unit_cost_cents, total_cents, bill_id, transaction_id, inventory_log_id, source_type, occurred_at, created_at",
+      )
+      .eq("business_id", businessId)
+      .order("occurred_at", { ascending: false }),
+    client
+      .from("bills")
+      .select(
+        "id, supplier_id, description, amount_cents, due_date, status, paid_at, payment_method, transaction_id, source_type, created_at",
+      )
+      .eq("business_id", businessId)
+      .order("due_date", { ascending: true }),
+  ]);
 
   if (businessResult.error) {
     throw toCloudError(businessResult.error, "Não conseguimos abrir seu negócio.");
@@ -304,6 +427,24 @@ export async function loadWorkspace(
       "Não conseguimos carregar o histórico de estoque.",
     );
   }
+  if (suppliersResult.error) {
+    throw toCloudError(
+      suppliersResult.error,
+      "Não conseguimos carregar os fornecedores.",
+    );
+  }
+  if (purchasesResult.error) {
+    throw toCloudError(
+      purchasesResult.error,
+      "Não conseguimos carregar as compras.",
+    );
+  }
+  if (billsResult.error) {
+    throw toCloudError(
+      billsResult.error,
+      "Não conseguimos carregar as contas a pagar.",
+    );
+  }
 
   const business = mapBusiness(businessResult.data as BusinessRow);
   const logs = ((logsResult.data ?? []) as InventoryLogRow[]).map(
@@ -318,13 +459,20 @@ export async function loadWorkspace(
   return {
     business,
     state: {
-      version: 2,
+      version: 3,
       segmentId: business.segment,
       products: ((productsResult.data ?? []) as ProductRow[]).map(mapProduct),
       transactions: ((transactionsResult.data ?? []) as TransactionRow[]).map(
         (row) => mapTransaction(row, logIdByTransaction),
       ),
       inventoryLogs: logs,
+      suppliers: ((suppliersResult.data ?? []) as SupplierRow[]).map(
+        mapSupplier,
+      ),
+      purchases: ((purchasesResult.data ?? []) as PurchaseRow[]).map(
+        mapPurchase,
+      ),
+      bills: ((billsResult.data ?? []) as BillRow[]).map(mapBill),
     },
   };
 }
@@ -338,6 +486,14 @@ function at(dayOffset: number, hour: number, minute: number): string {
   date.setDate(date.getDate() - dayOffset);
   date.setHours(hour, minute, 0, 0);
   return date.toISOString();
+}
+
+function dateOnly(dayOffset: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + dayOffset);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 async function seedWorkspace(
@@ -378,12 +534,17 @@ async function seedWorkspace(
         cost_cents: product.costCents,
         price_cents: product.priceCents,
         track_stock: product.trackStock,
+        // O item de exemplo já existia antes do histórico, igual ao modo local.
+        // Sem isso, o estoque parado nunca apareceria no primeiro acesso à nuvem.
+        created_at: at(90, 8, 0),
       })),
     );
     if (error) {
       throw toCloudError(error, "Não conseguimos preparar os itens.");
     }
   }
+
+  if (!includeSampleTransactions) return;
 
   const { count, error: countError } = await client
     .from("transactions")
@@ -392,7 +553,7 @@ async function seedWorkspace(
   if (countError) {
     throw toCloudError(countError, "Não conseguimos preparar os exemplos.");
   }
-  if (!includeSampleTransactions || (count ?? 0) > 0) return;
+  if ((count ?? 0) > 0) return;
 
   const { data: productRows, error: productError } = await client
     .from("products")
@@ -402,7 +563,7 @@ async function seedWorkspace(
     throw toCloudError(productError, "Não conseguimos preparar os exemplos.");
   }
 
-  const idByName = new Map(
+  const productIdByName = new Map(
     ((productRows ?? []) as Array<{ id: string; name: string }>).map((row) => [
       row.name.trim().toLowerCase(),
       row.id,
@@ -411,10 +572,111 @@ async function seedWorkspace(
 
   const productIdByKey = new Map<string, string>();
   for (const seed of segment.products) {
-    const id = idByName.get(seed.name.trim().toLowerCase());
+    const id = productIdByName.get(seed.name.trim().toLowerCase());
     if (id) productIdByKey.set(seed.key, id);
   }
 
+  // -------------------------------------------------------------------------
+  // Fornecedores
+  // -------------------------------------------------------------------------
+  const supplierIdByKey = new Map<string, string>();
+
+  for (const supplier of segment.suppliers) {
+    const { data, error } = await client
+      .from("suppliers")
+      .insert({
+        business_id: businessId,
+        name: supplier.name,
+        phone: optionalText(supplier.phone),
+        email: optionalText(supplier.email),
+        notes: optionalText(supplier.notes),
+      })
+      .select("id")
+      .single();
+    if (error) {
+      throw toCloudError(error, "Não conseguimos preparar os fornecedores.");
+    }
+    supplierIdByKey.set(supplier.key, (data as { id: string }).id);
+  }
+
+  // -------------------------------------------------------------------------
+  // Contas a pagar de exemplo
+  // -------------------------------------------------------------------------
+  for (const bill of segment.bills) {
+    const { error } = await client.from("bills").insert({
+      business_id: businessId,
+      supplier_id: bill.supplierKey
+        ? (supplierIdByKey.get(bill.supplierKey) ?? null)
+        : null,
+      description: bill.description,
+      amount_cents: bill.amountCents,
+      due_date: dateOnly(bill.dueDayOffset),
+      status: "open",
+      payment_method: bill.paymentMethod ?? null,
+      source_type: "manual",
+    });
+    if (error) {
+      throw toCloudError(error, "Não conseguimos preparar as contas.");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Compras de exemplo (histórico de preço)
+  // -------------------------------------------------------------------------
+  for (const purchase of segment.purchases) {
+    const productName = purchase.productName
+      ? purchase.productName
+      : (segment.products.find(
+          (product) => product.key === purchase.productKey,
+        )?.name ?? "Compra");
+    const totalCents = Math.round(
+      purchase.quantity * purchase.unitCostCents,
+    );
+
+    let billId: string | null = null;
+    if (!purchase.paid) {
+      const { data, error } = await client
+        .from("bills")
+        .insert({
+          business_id: businessId,
+          supplier_id: supplierIdByKey.get(purchase.supplierKey) ?? null,
+          description: `Compra: ${productName}`,
+          amount_cents: totalCents,
+          due_date: dateOnly(purchase.dueDayOffset ?? 14),
+          status: "open",
+          payment_method: purchase.paymentMethod ?? null,
+          source_type: "manual",
+        })
+        .select("id")
+        .single();
+      if (error) {
+        throw toCloudError(error, "Não conseguimos preparar as compras.");
+      }
+      billId = (data as { id: string }).id;
+    }
+
+    const { error } = await client.from("purchases").insert({
+      business_id: businessId,
+      supplier_id: supplierIdByKey.get(purchase.supplierKey) ?? null,
+      product_id: purchase.productKey
+        ? (productIdByKey.get(purchase.productKey) ?? null)
+        : null,
+      product_name: productName,
+      quantity: purchase.quantity,
+      unit_cost_cents: purchase.unitCostCents,
+      total_cents: totalCents,
+      bill_id: billId,
+      source_type: "manual",
+      occurred_at: at(purchase.dayOffset, 10, 30),
+    });
+    if (error) {
+      throw toCloudError(error, "Não conseguimos preparar as compras.");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Lançamentos de exemplo
+  // -------------------------------------------------------------------------
   interface SeedTransactionRow {
     business_id: string;
     kind: Transaction["kind"];
@@ -422,6 +684,7 @@ async function seedWorkspace(
     amount_cents: number;
     quantity: number | null;
     product_id: string | null;
+    supplier_id: null;
     payment_method: PaymentMethod | null;
     source_type: SourceType;
     status: Transaction["status"];
@@ -437,6 +700,7 @@ async function seedWorkspace(
     product_id: seed.productKey
       ? (productIdByKey.get(seed.productKey) ?? null)
       : null,
+    supplier_id: null,
     payment_method: seed.paymentMethod ?? null,
     source_type: "manual",
     status: "processed",
@@ -455,6 +719,7 @@ async function seedWorkspace(
       amount_cents: segment.pending.amountCents,
       quantity: segment.pending.quantity,
       product_id: pendingProductId,
+      supplier_id: null,
       payment_method: null,
       source_type: "audio_transcription",
       status: "pending_review",
@@ -538,6 +803,40 @@ export async function replaceWorkspace(
 }
 
 // ---------------------------------------------------------------------------
+// Ingestão (base para WhatsApp, e-mail/XML e QR Code)
+// ---------------------------------------------------------------------------
+
+async function recordIngestionEvent(
+  client: SupabaseClient,
+  businessId: string,
+  input: {
+    sourceType: SourceType;
+    status: "processed" | "pending_review";
+    rawInput?: string;
+    transactionId?: string;
+    aiConfidence?: number;
+    extractedPayload?: Record<string, unknown>;
+    externalChannel?: string;
+    externalId?: string;
+  },
+): Promise<void> {
+  const { error } = await client.from("ingestion_events").insert({
+    business_id: businessId,
+    source_type: input.sourceType,
+    status: input.status,
+    raw_input: input.rawInput ?? null,
+    extracted_payload: input.extractedPayload ?? null,
+    ai_confidence: input.aiConfidence ?? null,
+    transaction_id: input.transactionId ?? null,
+    external_channel: input.externalChannel ?? null,
+    external_id: input.externalId ?? null,
+    processed_at: input.status === "processed" ? new Date().toISOString() : null,
+  });
+  // O evento é auditoria: se falhar, o lançamento financeiro já está salvo.
+  if (error) return;
+}
+
+// ---------------------------------------------------------------------------
 // Escritas
 // ---------------------------------------------------------------------------
 
@@ -552,8 +851,8 @@ export async function registerSale(
     sourceType?: SourceType;
     rawInput?: string;
   },
-): Promise<void> {
-  const { error } = await client.rpc("register_sale", {
+): Promise<string | null> {
+  const { data, error } = await client.rpc("register_sale", {
     p_business_id: businessId,
     p_product_id: input.productId,
     p_quantity: input.quantity,
@@ -563,6 +862,19 @@ export async function registerSale(
     p_raw_input: input.rawInput ?? null,
   });
   if (error) throw toCloudError(error, "Não conseguimos salvar a venda.");
+
+  const transactionId = typeof data === "string" ? data : null;
+  const sourceType = input.sourceType ?? "manual";
+  if (transactionId && sourceType !== "manual") {
+    await recordIngestionEvent(client, businessId, {
+      sourceType,
+      status: "processed",
+      rawInput: input.rawInput,
+      transactionId,
+      externalChannel: sourceType === "image_recognition" ? "image" : "audio",
+    });
+  }
+  return transactionId;
 }
 
 export async function registerExpense(
@@ -574,19 +886,66 @@ export async function registerExpense(
     paymentMethod: PaymentMethod;
     sourceType?: SourceType;
     rawInput?: string;
+    supplierId?: string;
   },
-): Promise<void> {
-  const { error } = await client.from("transactions").insert({
-    business_id: businessId,
-    kind: "expense",
-    description: input.description,
-    amount_cents: input.amountCents,
-    payment_method: input.paymentMethod,
-    source_type: input.sourceType ?? "manual",
-    status: "processed",
-    raw_input: input.rawInput ?? null,
-  });
+): Promise<string | null> {
+  const { data, error } = await client
+    .from("transactions")
+    .insert({
+      business_id: businessId,
+      kind: "expense",
+      description: input.description,
+      amount_cents: input.amountCents,
+      supplier_id: input.supplierId ?? null,
+      payment_method: input.paymentMethod,
+      source_type: input.sourceType ?? "manual",
+      status: "processed",
+      raw_input: input.rawInput ?? null,
+    })
+    .select("id")
+    .single();
   if (error) throw toCloudError(error, "Não conseguimos salvar o gasto.");
+
+  const transactionId = (data as { id: string }).id;
+  const sourceType = input.sourceType ?? "manual";
+  if (sourceType !== "manual") {
+    await recordIngestionEvent(client, businessId, {
+      sourceType,
+      status: "processed",
+      rawInput: input.rawInput,
+      transactionId,
+      externalChannel: sourceType === "image_recognition" ? "image" : "audio",
+    });
+  }
+  return transactionId;
+}
+
+export async function registerWithdrawal(
+  client: SupabaseClient,
+  businessId: string,
+  input: {
+    description: string;
+    amountCents: number;
+    paymentMethod: PaymentMethod;
+    occurredAt?: string;
+  },
+): Promise<string> {
+  const { data, error } = await client
+    .from("transactions")
+    .insert({
+      business_id: businessId,
+      kind: "withdrawal",
+      description: input.description,
+      amount_cents: input.amountCents,
+      payment_method: input.paymentMethod,
+      source_type: "manual",
+      status: "processed",
+      occurred_at: input.occurredAt ?? new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (error) throw toCloudError(error, "Não conseguimos salvar a retirada.");
+  return (data as { id: string }).id;
 }
 
 export async function registerStockEntry(
@@ -704,6 +1063,57 @@ export async function registerStockEntry(
   return productId;
 }
 
+export async function registerPurchase(
+  client: SupabaseClient,
+  businessId: string,
+  input: {
+    supplierId?: string;
+    productId?: string;
+    productName: string;
+    quantity: number;
+    unitCostCents: number;
+    paidNow: boolean;
+    dueDate?: string;
+    paymentMethod: PaymentMethod;
+    sourceType?: SourceType;
+    rawInput?: string;
+  },
+): Promise<{
+  productId: string | null;
+  purchaseId: string | null;
+  billId: string | null;
+  transactionId: string | null;
+}> {
+  const { data, error } = await client.rpc("register_purchase", {
+    p_business_id: businessId,
+    p_supplier_id: input.supplierId ?? null,
+    p_product_id: input.productId ?? null,
+    p_product_name: input.productName,
+    p_quantity: input.quantity,
+    p_unit_cost_cents: input.unitCostCents,
+    p_paid_now: input.paidNow,
+    p_due_date: input.dueDate ?? null,
+    p_payment_method: input.paymentMethod,
+    p_source_type: input.sourceType ?? "manual",
+    p_raw_input: input.rawInput ?? null,
+  });
+  if (error) throw toCloudError(error, "Não conseguimos salvar a compra.");
+
+  const result = (data ?? {}) as {
+    product_id?: string;
+    purchase_id?: string;
+    bill_id?: string | null;
+    transaction_id?: string | null;
+  };
+
+  return {
+    productId: result.product_id ?? null,
+    purchaseId: result.purchase_id ?? null,
+    billId: result.bill_id ?? null,
+    transactionId: result.transaction_id ?? null,
+  };
+}
+
 export async function confirmPendingSale(
   client: SupabaseClient,
   input: {
@@ -756,6 +1166,129 @@ export async function updateProduct(
   if (error) throw toCloudError(error, "Não conseguimos atualizar o item.");
 }
 
+export async function setProductSupplier(
+  client: SupabaseClient,
+  productId: string,
+  supplierId: string | null,
+): Promise<void> {
+  const { error } = await client
+    .from("products")
+    .update({ supplier_id: supplierId })
+    .eq("id", productId);
+  if (error) {
+    throw toCloudError(error, "Não conseguimos atualizar o fornecedor do item.");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fornecedores, contas e retiradas
+// ---------------------------------------------------------------------------
+
+export async function saveSupplier(
+  client: SupabaseClient,
+  businessId: string,
+  input: {
+    id?: string;
+    name: string;
+    phone?: string;
+    email?: string;
+    notes?: string;
+  },
+): Promise<string> {
+  const payload = {
+    name: input.name.trim(),
+    phone: optionalText(input.phone),
+    email: optionalText(input.email),
+    notes: optionalText(input.notes),
+  };
+
+  if (input.id) {
+    const { error } = await client
+      .from("suppliers")
+      .update(payload)
+      .eq("id", input.id);
+    if (error) throw toCloudError(error, "Não conseguimos salvar o fornecedor.");
+    return input.id;
+  }
+
+  const { data, error } = await client
+    .from("suppliers")
+    .insert({ business_id: businessId, ...payload })
+    .select("id")
+    .single();
+  if (error) throw toCloudError(error, "Não conseguimos salvar o fornecedor.");
+  return (data as { id: string }).id;
+}
+
+export async function removeSupplier(
+  client: SupabaseClient,
+  supplierId: string,
+): Promise<void> {
+  const { error } = await client
+    .from("suppliers")
+    .delete()
+    .eq("id", supplierId);
+  if (error) throw toCloudError(error, "Não conseguimos apagar o fornecedor.");
+}
+
+export async function createBill(
+  client: SupabaseClient,
+  businessId: string,
+  input: {
+    description: string;
+    amountCents: number;
+    dueDate: string;
+    supplierId?: string;
+    paymentMethod?: PaymentMethod;
+  },
+): Promise<string> {
+  const { data, error } = await client
+    .from("bills")
+    .insert({
+      business_id: businessId,
+      supplier_id: input.supplierId ?? null,
+      description: input.description.trim(),
+      amount_cents: input.amountCents,
+      due_date: input.dueDate,
+      status: "open",
+      payment_method: input.paymentMethod ?? null,
+      source_type: "manual",
+    })
+    .select("id")
+    .single();
+  if (error) throw toCloudError(error, "Não conseguimos salvar a conta.");
+  return (data as { id: string }).id;
+}
+
+export async function payBill(
+  client: SupabaseClient,
+  input: {
+    billId: string;
+    paymentMethod: PaymentMethod;
+    paidAt?: string;
+  },
+): Promise<string> {
+  const { data, error } = await client.rpc("pay_bill", {
+    p_bill_id: input.billId,
+    p_payment_method: input.paymentMethod,
+    p_paid_at: input.paidAt ?? new Date().toISOString(),
+  });
+  if (error) throw toCloudError(error, "Não conseguimos pagar esta conta.");
+  return typeof data === "string" ? data : "";
+}
+
+export async function removeBill(
+  client: SupabaseClient,
+  billId: string,
+): Promise<void> {
+  const { error } = await client
+    .from("bills")
+    .delete()
+    .eq("id", billId)
+    .eq("status", "open");
+  if (error) throw toCloudError(error, "Não conseguimos apagar a conta.");
+}
+
 export async function createPendingSale(
   client: SupabaseClient,
   businessId: string,
@@ -786,5 +1319,277 @@ export async function createPendingSale(
     .select("id")
     .single();
   if (error) throw toCloudError(error, "Não conseguimos registrar o áudio.");
+  const transactionId = (data as { id: string }).id;
+
+  await recordIngestionEvent(client, businessId, {
+    sourceType: input.sourceType,
+    status: "pending_review",
+    rawInput: input.rawInput,
+    transactionId,
+    aiConfidence: input.aiConfidence,
+    externalChannel:
+      input.sourceType === "audio_transcription" ? "audio" : "image",
+    extractedPayload: {
+      productName: input.productName,
+      quantity: input.quantity,
+      amountCents: input.amountCents,
+    },
+  });
+
+  return transactionId;
+}
+
+// ---------------------------------------------------------------------------
+// Importação de planilha
+// ---------------------------------------------------------------------------
+
+function normalizeName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+async function insertImportTransaction(
+  client: SupabaseClient,
+  businessId: string,
+  row: ImportRow,
+  overrides: {
+    description?: string;
+    kind?: "sale" | "expense" | "withdrawal";
+    supplierId?: string | null;
+    productId?: string | null;
+    quantity?: number | null;
+  } = {},
+): Promise<string | null> {
+  const { data, error } = await client
+    .from("transactions")
+    .insert({
+      business_id: businessId,
+      kind: overrides.kind ?? row.kind,
+      description: overrides.description ?? row.description,
+      amount_cents: row.amountCents,
+      quantity: overrides.quantity ?? row.quantity ?? null,
+      product_id: overrides.productId ?? null,
+      supplier_id: overrides.supplierId ?? null,
+      payment_method: row.paymentMethod,
+      source_type: "spreadsheet_import",
+      status: "processed",
+      occurred_at: row.occurredAt,
+    })
+    .select("id")
+    .single();
+  if (error) return null;
   return (data as { id: string }).id;
+}
+
+export async function importSpreadsheetRows(
+  client: SupabaseClient,
+  businessId: string,
+  rows: ImportRow[],
+): Promise<ImportSummary> {
+  const errors: string[] = [];
+  let imported = 0;
+
+  if (rows.length === 0) {
+    return { imported: 0, skipped: 0, errors };
+  }
+
+  const { data: productRows, error: productError } = await client
+    .from("products")
+    .select("id, name")
+    .eq("business_id", businessId);
+  if (productError) {
+    throw toCloudError(productError, "Não conseguimos carregar os itens.");
+  }
+  const productIdByName = new Map(
+    ((productRows ?? []) as Array<{ id: string; name: string }>).map((row) => [
+      normalizeName(row.name),
+      row.id,
+    ]),
+  );
+
+  const { data: supplierRows, error: supplierError } = await client
+    .from("suppliers")
+    .select("id, name")
+    .eq("business_id", businessId);
+  if (supplierError) {
+    throw toCloudError(supplierError, "Não conseguimos carregar os fornecedores.");
+  }
+  const supplierIdByName = new Map(
+    ((supplierRows ?? []) as Array<{ id: string; name: string }>).map((row) => [
+      normalizeName(row.name),
+      row.id,
+    ]),
+  );
+
+  async function ensureSupplier(name?: string): Promise<string | null> {
+    if (!name?.trim()) return null;
+    const key = normalizeName(name);
+    const existing = supplierIdByName.get(key);
+    if (existing) return existing;
+    const { data, error } = await client
+      .from("suppliers")
+      .insert({ business_id: businessId, name: name.trim() })
+      .select("id")
+      .single();
+    if (error) {
+      errors.push(`Fornecedor "${name}" não foi criado.`);
+      return null;
+    }
+    const id = (data as { id: string }).id;
+    supplierIdByName.set(key, id);
+    return id;
+  }
+
+  // Vendas, gastos e retiradas entram em um único lote.
+  const simpleRows = rows.filter(
+    (row) =>
+      row.kind === "sale" ||
+      row.kind === "expense" ||
+      row.kind === "withdrawal",
+  );
+
+  if (simpleRows.length > 0) {
+    const { error } = await client.from("transactions").insert(
+      simpleRows.map((row) => ({
+        business_id: businessId,
+        kind: row.kind,
+        description: row.description,
+        amount_cents: row.amountCents,
+        quantity: row.kind === "sale" ? (row.quantity ?? null) : null,
+        product_id:
+          row.kind === "sale" && row.productName
+            ? (productIdByName.get(normalizeName(row.productName)) ?? null)
+            : null,
+        supplier_id: null,
+        payment_method: row.paymentMethod,
+        source_type: "spreadsheet_import",
+        status: "processed",
+        occurred_at: row.occurredAt,
+      })),
+    );
+    if (error) {
+      errors.push("Não conseguimos importar as vendas e gastos.");
+    } else {
+      imported += simpleRows.length;
+    }
+  }
+
+  // Compras e contas precisam de vínculo com fornecedor/produto/conta.
+  for (const row of rows) {
+    try {
+      if (row.kind === "purchase") {
+        const supplierId = await ensureSupplier(row.supplierName);
+        const productName = row.productName ?? row.description;
+        const productId =
+          productIdByName.get(normalizeName(productName)) ?? null;
+        const quantity = row.quantity ?? 1;
+
+        let billId: string | null = null;
+        let transactionId: string | null = null;
+
+        if (row.paid) {
+          transactionId = await insertImportTransaction(
+            client,
+            businessId,
+            row,
+            {
+              kind: "expense",
+              description: `Compra: ${productName}`,
+              supplierId,
+              productId,
+            },
+          );
+          if (!transactionId) {
+            errors.push(`Linha ${row.line}: compra não foi salva.`);
+            continue;
+          }
+        } else {
+          const { data, error } = await client
+            .from("bills")
+            .insert({
+              business_id: businessId,
+              supplier_id: supplierId,
+              description: `Compra: ${productName}`,
+              amount_cents: row.amountCents,
+              due_date: row.dueDate ?? dateOnly(14),
+              status: "open",
+              payment_method: row.paymentMethod,
+              source_type: "spreadsheet_import",
+            })
+            .select("id")
+            .single();
+          if (error) {
+            errors.push(`Linha ${row.line}: conta da compra não foi criada.`);
+            continue;
+          }
+          billId = (data as { id: string }).id;
+        }
+
+        const { error: purchaseError } = await client.from("purchases").insert({
+          business_id: businessId,
+          supplier_id: supplierId,
+          product_id: productId,
+          product_name: productName,
+          quantity,
+          unit_cost_cents: Math.round(row.amountCents / quantity),
+          total_cents: row.amountCents,
+          bill_id: billId,
+          transaction_id: transactionId,
+          source_type: "spreadsheet_import",
+          occurred_at: row.occurredAt,
+        });
+        if (purchaseError) {
+          errors.push(`Linha ${row.line}: histórico de compra não foi salvo.`);
+          continue;
+        }
+        imported += 1;
+        continue;
+      }
+
+      if (row.kind === "bill") {
+        const supplierId = await ensureSupplier(row.supplierName);
+        let transactionId: string | null = null;
+        if (row.paid) {
+          transactionId = await insertImportTransaction(
+            client,
+            businessId,
+            row,
+            {
+              kind: "expense",
+              description: `Conta: ${row.description}`,
+              supplierId,
+            },
+          );
+        }
+        const { error } = await client.from("bills").insert({
+          business_id: businessId,
+          supplier_id: supplierId,
+          description: row.description,
+          amount_cents: row.amountCents,
+          due_date: row.dueDate ?? dateOnly(7),
+          status: row.paid ? "paid" : "open",
+          paid_at: row.paid ? row.occurredAt : null,
+          payment_method: row.paymentMethod,
+          transaction_id: transactionId,
+          source_type: "spreadsheet_import",
+        });
+        if (error) {
+          errors.push(`Linha ${row.line}: conta não foi salva.`);
+          continue;
+        }
+        imported += 1;
+      }
+    } catch (error) {
+      errors.push(
+        `Linha ${row.line}: ${
+          error instanceof Error ? error.message : "erro inesperado."
+        }`,
+      );
+    }
+  }
+
+  return {
+    imported,
+    skipped: Math.max(0, rows.length - imported),
+    errors,
+  };
 }

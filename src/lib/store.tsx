@@ -15,34 +15,48 @@ import { createBusiness, createSeedState } from "./seed";
 import { SEGMENTS, SEGMENT_LIST, isSegmentId } from "./segments";
 import type { SegmentProfile } from "./segments";
 import { getSupabaseClient, loadSupabaseConfig } from "./supabase/client";
+import { addDaysToDateOnly, todayDateOnly } from "./analytics";
+import type { ImportRow, ImportSummary } from "./import";
 import {
   CloudError,
   confirmPendingSale,
+  createBill as createCloudBill,
   createPendingSale,
   ensureAnonymousSession,
+  importSpreadsheetRows,
   loadWorkspace,
   openWorkspace,
+  payBill as payCloudBill,
   registerExpense,
+  registerPurchase as registerCloudPurchase,
   registerSale,
   registerStockEntry,
+  registerWithdrawal as registerCloudWithdrawal,
+  removeBill as removeCloudBill,
+  removeSupplier as removeCloudSupplier,
   removeTransaction,
   replaceWorkspace,
+  saveSupplier,
+  setProductSupplier as setCloudProductSupplier,
   updateProduct as updateCloudProduct,
   type Workspace,
 } from "./supabase/workspace";
 import type {
+  Bill,
   Business,
   DemoState,
   InventoryLog,
   PaymentMethod,
   Product,
+  Purchase,
   SegmentId,
   SourceType,
+  Supplier,
   Transaction,
 } from "./types";
 
-const STORAGE_KEY = "meu-caixa:demo:v2";
-const LEGACY_STORAGE_KEY = "meu-caixa:demo:v1";
+const STORAGE_KEY = "meu-caixa:demo:v3";
+const LEGACY_STORAGE_KEYS = ["meu-caixa:demo:v2", "meu-caixa:demo:v1"];
 
 interface SaleInput {
   productId: string;
@@ -73,6 +87,47 @@ interface ReviewInput extends SaleInput {
   transactionId: string;
 }
 
+interface SupplierInput {
+  name: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+}
+
+interface PurchaseInput {
+  supplierId?: string;
+  productId?: string;
+  productName: string;
+  quantity: number;
+  unitCostCents: number;
+  paidNow: boolean;
+  dueDate?: string;
+  paymentMethod: PaymentMethod;
+  sourceType?: SourceType;
+  rawInput?: string;
+}
+
+interface PurchaseResult {
+  productId?: string;
+  purchaseId?: string;
+  billId?: string;
+  transactionId?: string;
+}
+
+interface BillInput {
+  description: string;
+  amountCents: number;
+  dueDate: string;
+  supplierId?: string;
+  paymentMethod?: PaymentMethod;
+}
+
+interface WithdrawalInput {
+  description: string;
+  amountCents: number;
+  paymentMethod: PaymentMethod;
+}
+
 export type StoreMode = "local" | "cloud";
 export type CloudStatus = "off" | "connecting" | "ready" | "error";
 
@@ -83,6 +138,10 @@ interface AppContextValue {
   products: Product[];
   transactions: Transaction[];
   inventoryLogs: InventoryLog[];
+  suppliers: Supplier[];
+  purchases: Purchase[];
+  bills: Bill[];
+  openBills: Bill[];
   pendingTransactions: Transaction[];
   lowStockProducts: Product[];
   todayInCents: number;
@@ -97,6 +156,7 @@ interface AppContextValue {
   retryCloud: () => Promise<void>;
   recordSale: (input: SaleInput) => Promise<void>;
   recordExpense: (input: ExpenseInput) => Promise<void>;
+  recordWithdrawal: (input: WithdrawalInput) => Promise<void>;
   addStock: (input: StockInput) => Promise<{
     product: Product;
     transaction?: Transaction;
@@ -107,7 +167,19 @@ interface AppContextValue {
     productId: string,
     input: { name: string; priceCents: number; minStock: number },
   ) => Promise<void>;
+  setProductSupplier: (
+    productId: string,
+    supplierId?: string,
+  ) => Promise<void>;
   deleteTransaction: (transactionId: string) => Promise<void>;
+  addSupplier: (input: SupplierInput) => Promise<Supplier>;
+  updateSupplier: (supplierId: string, input: SupplierInput) => Promise<void>;
+  deleteSupplier: (supplierId: string) => Promise<void>;
+  registerPurchase: (input: PurchaseInput) => Promise<PurchaseResult>;
+  addBill: (input: BillInput) => Promise<void>;
+  payBill: (billId: string, paymentMethod: PaymentMethod) => Promise<void>;
+  deleteBill: (billId: string) => Promise<void>;
+  importRows: (rows: ImportRow[]) => Promise<ImportSummary>;
   setSegment: (segmentId: SegmentId) => Promise<void>;
   resetDemo: () => Promise<void>;
   simulatePending: () => Promise<Transaction | null>;
@@ -118,6 +190,14 @@ const AppContext = createContext<AppContextValue | null>(null);
 interface CloudConnection {
   client: SupabaseClient;
   businessId: string;
+}
+
+interface LegacyDemoState {
+  version: 2;
+  segmentId: SegmentId;
+  products: Product[];
+  transactions: Transaction[];
+  inventoryLogs: InventoryLog[];
 }
 
 function uid(prefix: string): string {
@@ -140,11 +220,14 @@ function isDemoState(value: unknown): value is DemoState {
   if (!value || typeof value !== "object") return false;
   const state = value as Partial<DemoState>;
   return (
-    state.version === 2 &&
+    state.version === 3 &&
     isSegmentId(state.segmentId) &&
     Array.isArray(state.products) &&
     Array.isArray(state.transactions) &&
     Array.isArray(state.inventoryLogs) &&
+    Array.isArray(state.suppliers) &&
+    Array.isArray(state.purchases) &&
+    Array.isArray(state.bills) &&
     state.products.every(
       (product) =>
         product && typeof product === "object" && "trackStock" in product,
@@ -152,13 +235,84 @@ function isDemoState(value: unknown): value is DemoState {
   );
 }
 
+function isLegacyState(value: unknown): value is LegacyDemoState {
+  if (!value || typeof value !== "object") return false;
+  const state = value as Partial<LegacyDemoState>;
+  return (
+    state.version === 2 &&
+    isSegmentId(state.segmentId) &&
+    Array.isArray(state.products) &&
+    Array.isArray(state.transactions) &&
+    Array.isArray(state.inventoryLogs)
+  );
+}
+
+/**
+ * Quem já usava a demo na v2 mantém vendas, gastos e estoque. Fornecedores,
+ * compras e contas de exemplo entram para as telas novas já terem conteúdo.
+ */
+function migrateLegacyState(state: LegacyDemoState): DemoState {
+  const seed = createSeedState(state.segmentId);
+  const productIdByName = new Map(
+    state.products.map((product) => [
+      product.name.trim().toLowerCase(),
+      product.id,
+    ]),
+  );
+
+  const purchases = seed.purchases.map((purchase) => ({
+    ...purchase,
+    productId: purchase.productName
+      ? (productIdByName.get(purchase.productName.trim().toLowerCase()) ??
+        undefined)
+      : purchase.productId,
+  }));
+
+  return {
+    version: 3,
+    segmentId: state.segmentId,
+    products: state.products,
+    transactions: state.transactions,
+    inventoryLogs: state.inventoryLogs,
+    suppliers: seed.suppliers,
+    purchases,
+    bills: seed.bills,
+  };
+}
+
 function readStoredState(): DemoState | null {
   try {
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return null;
-    const parsed: unknown = JSON.parse(stored);
-    return isDemoState(parsed) ? parsed : null;
+    if (stored) {
+      const parsed: unknown = JSON.parse(stored);
+      if (isDemoState(parsed)) {
+        for (const key of LEGACY_STORAGE_KEYS) {
+          window.localStorage.removeItem(key);
+        }
+        return parsed;
+      }
+    }
+
+    // A v2 guardava só produtos, lançamentos e estoque. Migramos mantendo o
+    // que a pessoa já tinha e completando fornecedores/compras/contas.
+    for (const key of LEGACY_STORAGE_KEYS) {
+      const legacy = window.localStorage.getItem(key);
+      if (!legacy) continue;
+      const parsed: unknown = JSON.parse(legacy);
+      if (isLegacyState(parsed)) {
+        const migrated = migrateLegacyState(parsed);
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        for (const legacyKey of LEGACY_STORAGE_KEYS) {
+          window.localStorage.removeItem(legacyKey);
+        }
+        return migrated;
+      }
+    }
+
+    for (const key of LEGACY_STORAGE_KEYS) {
+      window.localStorage.removeItem(key);
+    }
+    return null;
   } catch {
     // Um storage corrompido não deve impedir o app de abrir.
     return null;
@@ -391,6 +545,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const recordWithdrawal = useCallback(
+    async (input: WithdrawalInput): Promise<void> => {
+      const description = input.description.trim();
+      if (!description) throw new Error("Diga para que foi a retirada.");
+      if (input.amountCents < 1) throw new Error("Informe um valor válido.");
+
+      const active = cloudRef.current;
+      if (active) {
+        await registerCloudWithdrawal(active.client, active.businessId, {
+          description,
+          amountCents: input.amountCents,
+          paymentMethod: input.paymentMethod,
+        });
+        await refresh();
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const transaction: Transaction = {
+        id: uid("tx"),
+        kind: "withdrawal",
+        description,
+        amountCents: input.amountCents,
+        paymentMethod: input.paymentMethod,
+        sourceType: "manual",
+        status: "processed",
+        occurredAt: now,
+        createdAt: now,
+      };
+
+      setState((previous) => ({
+        ...previous,
+        transactions: [transaction, ...previous.transactions],
+      }));
+    },
+    [refresh],
+  );
+
   const addStock = useCallback(
     async (
       input: StockInput,
@@ -525,6 +717,604 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { product, transaction: expense };
     },
     [refresh, state.products],
+  );
+
+  const registerPurchase = useCallback(
+    async (input: PurchaseInput): Promise<PurchaseResult> => {
+      const cleanName = input.productName.trim();
+      if (!cleanName) throw new Error("Diga o nome do item comprado.");
+      if (input.quantity <= 0) throw new Error("Informe a quantidade.");
+      if (input.unitCostCents < 1) throw new Error("Informe o custo da compra.");
+      if (!input.paidNow && !input.dueDate) {
+        throw new Error("Escolha o vencimento da conta.");
+      }
+
+      const active = cloudRef.current;
+      if (active) {
+        const result = await registerCloudPurchase(
+          active.client,
+          active.businessId,
+          {
+            supplierId: input.supplierId,
+            productId: input.productId,
+            productName: cleanName,
+            quantity: input.quantity,
+            unitCostCents: input.unitCostCents,
+            paidNow: input.paidNow,
+            dueDate: input.dueDate,
+            paymentMethod: input.paymentMethod,
+            sourceType: input.sourceType ?? "manual",
+            rawInput: input.rawInput,
+          },
+        );
+        await refresh();
+        return {
+          productId: result.productId ?? undefined,
+          purchaseId: result.purchaseId ?? undefined,
+          billId: result.billId ?? undefined,
+          transactionId: result.transactionId ?? undefined,
+        };
+      }
+
+      const now = new Date().toISOString();
+      const totalCents = Math.round(input.quantity * input.unitCostCents);
+      const existing =
+        state.products.find(
+          (product) => product.id === input.productId && product.trackStock,
+        ) ??
+        state.products.find(
+          (product) =>
+            product.trackStock &&
+            product.name.toLowerCase() === cleanName.toLowerCase(),
+        );
+
+      let product: Product;
+      let products: Product[];
+      if (existing) {
+        const newStock = existing.stock + input.quantity;
+        product = {
+          ...existing,
+          name: cleanName,
+          stock: newStock,
+          costCents: Math.round(
+            (existing.stock * existing.costCents + totalCents) / newStock,
+          ),
+          supplierId: input.supplierId ?? existing.supplierId,
+        };
+        products = state.products.map((item) =>
+          item.id === existing.id ? product : item,
+        );
+      } else {
+        const suggestedPrice = Math.max(
+          100,
+          Math.ceil((input.unitCostCents * 1.8) / 100) * 100,
+        );
+        product = {
+          id: uid("product"),
+          name: cleanName,
+          unit: "un",
+          unitPlural: "un",
+          stock: input.quantity,
+          minStock: 2,
+          costCents: input.unitCostCents,
+          priceCents: suggestedPrice,
+          trackStock: true,
+          supplierId: input.supplierId,
+          createdAt: now,
+        };
+        products = [...state.products, product];
+      }
+
+      const logId = uid("log");
+      const transactionId = input.paidNow ? uid("tx") : undefined;
+      const billId = input.paidNow ? undefined : uid("bill");
+
+      const log: InventoryLog = {
+        id: logId,
+        productId: product.id,
+        direction: "in",
+        quantity: input.quantity,
+        unitCostCents: input.unitCostCents,
+        transactionId,
+        sourceType: input.sourceType ?? "manual",
+        status: "processed",
+        occurredAt: now,
+      };
+
+      const purchase: Purchase = {
+        id: uid("purchase"),
+        supplierId: input.supplierId,
+        productId: product.id,
+        productName: product.name,
+        quantity: input.quantity,
+        unitCostCents: input.unitCostCents,
+        totalCents,
+        billId,
+        transactionId,
+        inventoryLogId: logId,
+        sourceType: input.sourceType ?? "manual",
+        occurredAt: now,
+        createdAt: now,
+      };
+
+      const transaction: Transaction | null = transactionId
+        ? {
+            id: transactionId,
+            kind: "expense",
+            description: `Compra: ${product.name}`,
+            amountCents: totalCents,
+            supplierId: input.supplierId,
+            paymentMethod: input.paymentMethod,
+            sourceType: input.sourceType ?? "manual",
+            status: "processed",
+            rawInput: input.rawInput,
+            occurredAt: now,
+            createdAt: now,
+            inventoryLogId: logId,
+          }
+        : null;
+
+      const bill: Bill | null = billId
+        ? {
+            id: billId,
+            supplierId: input.supplierId,
+            description: `Compra: ${product.name}`,
+            amountCents: totalCents,
+            dueDate: input.dueDate ?? todayDateOnly(),
+            status: "open",
+            paymentMethod: input.paymentMethod,
+            sourceType: input.sourceType ?? "manual",
+            createdAt: now,
+          }
+        : null;
+
+      setState((previous) => ({
+        ...previous,
+        products,
+        purchases: [purchase, ...previous.purchases],
+        bills: bill ? [bill, ...previous.bills] : previous.bills,
+        transactions: transaction
+          ? [transaction, ...previous.transactions]
+          : previous.transactions,
+        inventoryLogs: [log, ...previous.inventoryLogs],
+      }));
+
+      return {
+        productId: product.id,
+        purchaseId: purchase.id,
+        billId,
+        transactionId,
+      };
+    },
+    [refresh, state.products],
+  );
+
+  const addSupplier = useCallback(
+    async (input: SupplierInput): Promise<Supplier> => {
+      const name = input.name.trim();
+      if (!name) throw new Error("Diga o nome do fornecedor.");
+      if (
+        state.suppliers.some(
+          (supplier) => supplier.name.toLowerCase() === name.toLowerCase(),
+        )
+      ) {
+        throw new Error("Já existe um fornecedor com esse nome.");
+      }
+
+      const active = cloudRef.current;
+      if (active) {
+        const id = await saveSupplier(active.client, active.businessId, {
+          name,
+          phone: input.phone,
+          email: input.email,
+          notes: input.notes,
+        });
+        const workspace = await refresh();
+        const saved = workspace?.state.suppliers.find(
+          (supplier) => supplier.id === id,
+        );
+        if (!saved) throw new Error("Não conseguimos carregar o fornecedor.");
+        return saved;
+      }
+
+      const supplier: Supplier = {
+        id: uid("supplier"),
+        name,
+        phone: input.phone?.trim() || undefined,
+        email: input.email?.trim() || undefined,
+        notes: input.notes?.trim() || undefined,
+        createdAt: new Date().toISOString(),
+      };
+      setState((previous) => ({
+        ...previous,
+        suppliers: [...previous.suppliers, supplier],
+      }));
+      return supplier;
+    },
+    [refresh, state.suppliers],
+  );
+
+  const updateSupplier = useCallback(
+    async (supplierId: string, input: SupplierInput): Promise<void> => {
+      const name = input.name.trim();
+      if (!name) throw new Error("Diga o nome do fornecedor.");
+      if (
+        state.suppliers.some(
+          (supplier) =>
+            supplier.id !== supplierId &&
+            supplier.name.toLowerCase() === name.toLowerCase(),
+        )
+      ) {
+        throw new Error("Já existe um fornecedor com esse nome.");
+      }
+
+      const active = cloudRef.current;
+      if (active) {
+        await saveSupplier(active.client, active.businessId, {
+          id: supplierId,
+          name,
+          phone: input.phone,
+          email: input.email,
+          notes: input.notes,
+        });
+        await refresh();
+        return;
+      }
+
+      setState((previous) => ({
+        ...previous,
+        suppliers: previous.suppliers.map((supplier) =>
+          supplier.id === supplierId
+            ? {
+                ...supplier,
+                name,
+                phone: input.phone?.trim() || undefined,
+                email: input.email?.trim() || undefined,
+                notes: input.notes?.trim() || undefined,
+              }
+            : supplier,
+        ),
+      }));
+    },
+    [refresh, state.suppliers],
+  );
+
+  const deleteSupplier = useCallback(
+    async (supplierId: string): Promise<void> => {
+      const active = cloudRef.current;
+      if (active) {
+        await removeCloudSupplier(active.client, supplierId);
+        await refresh();
+        return;
+      }
+
+      setState((previous) => ({
+        ...previous,
+        suppliers: previous.suppliers.filter(
+          (supplier) => supplier.id !== supplierId,
+        ),
+        products: previous.products.map((product) =>
+          product.supplierId === supplierId
+            ? { ...product, supplierId: undefined }
+            : product,
+        ),
+        purchases: previous.purchases.map((purchase) =>
+          purchase.supplierId === supplierId
+            ? { ...purchase, supplierId: undefined }
+            : purchase,
+        ),
+        bills: previous.bills.map((bill) =>
+          bill.supplierId === supplierId
+            ? { ...bill, supplierId: undefined }
+            : bill,
+        ),
+      }));
+    },
+    [refresh],
+  );
+
+  const addBill = useCallback(
+    async (input: BillInput): Promise<void> => {
+      const description = input.description.trim();
+      if (!description) throw new Error("Diga o que é a conta.");
+      if (input.amountCents < 1) throw new Error("Informe um valor válido.");
+      if (!input.dueDate) throw new Error("Escolha o vencimento.");
+
+      const active = cloudRef.current;
+      if (active) {
+        await createCloudBill(active.client, active.businessId, {
+          description,
+          amountCents: input.amountCents,
+          dueDate: input.dueDate,
+          supplierId: input.supplierId,
+          paymentMethod: input.paymentMethod,
+        });
+        await refresh();
+        return;
+      }
+
+      const bill: Bill = {
+        id: uid("bill"),
+        supplierId: input.supplierId,
+        description,
+        amountCents: input.amountCents,
+        dueDate: input.dueDate,
+        status: "open",
+        paymentMethod: input.paymentMethod,
+        sourceType: "manual",
+        createdAt: new Date().toISOString(),
+      };
+      setState((previous) => ({
+        ...previous,
+        bills: [bill, ...previous.bills],
+      }));
+    },
+    [refresh],
+  );
+
+  const payBill = useCallback(
+    async (billId: string, paymentMethod: PaymentMethod): Promise<void> => {
+      const bill = state.bills.find((item) => item.id === billId);
+      if (!bill) throw new Error("Conta não encontrada.");
+      if (bill.status !== "open") throw new Error("Esta conta já foi paga.");
+
+      const active = cloudRef.current;
+      if (active) {
+        await payCloudBill(active.client, {
+          billId,
+          paymentMethod,
+        });
+        await refresh();
+        return;
+      }
+
+      const now = new Date().toISOString();
+      const transactionId = uid("tx");
+      const transaction: Transaction = {
+        id: transactionId,
+        kind: "expense",
+        description: `Conta: ${bill.description}`,
+        amountCents: bill.amountCents,
+        supplierId: bill.supplierId,
+        paymentMethod,
+        sourceType: bill.sourceType,
+        status: "processed",
+        occurredAt: now,
+        createdAt: now,
+      };
+
+      setState((previous) => ({
+        ...previous,
+        bills: previous.bills.map((item) =>
+          item.id === billId
+            ? {
+                ...item,
+                status: "paid",
+                paidAt: now,
+                paymentMethod,
+                transactionId,
+              }
+            : item,
+        ),
+        transactions: [transaction, ...previous.transactions],
+      }));
+    },
+    [refresh, state.bills],
+  );
+
+  const deleteBill = useCallback(
+    async (billId: string): Promise<void> => {
+      const bill = state.bills.find((item) => item.id === billId);
+      if (!bill) throw new Error("Conta não encontrada.");
+      if (bill.status !== "open") {
+        throw new Error("Só é possível apagar contas em aberto.");
+      }
+
+      const active = cloudRef.current;
+      if (active) {
+        await removeCloudBill(active.client, billId);
+        await refresh();
+        return;
+      }
+
+      setState((previous) => ({
+        ...previous,
+        bills: previous.bills.filter((item) => item.id !== billId),
+        purchases: previous.purchases.map((purchase) =>
+          purchase.billId === billId
+            ? { ...purchase, billId: undefined }
+            : purchase,
+        ),
+      }));
+    },
+    [refresh, state.bills],
+  );
+
+  const importRows = useCallback(
+    async (rows: ImportRow[]): Promise<ImportSummary> => {
+      const active = cloudRef.current;
+      if (active) {
+        const summary = await importSpreadsheetRows(
+          active.client,
+          active.businessId,
+          rows,
+        );
+        await refresh();
+        return summary;
+      }
+
+      const now = new Date().toISOString();
+      const suppliers = [...state.suppliers];
+      const supplierIdByName = new Map(
+        suppliers.map((supplier) => [
+          supplier.name.trim().toLowerCase(),
+          supplier.id,
+        ]),
+      );
+      const productIdByName = new Map(
+        state.products.map((product) => [
+          product.name.trim().toLowerCase(),
+          product.id,
+        ]),
+      );
+      const transactions = [...state.transactions];
+      const bills = [...state.bills];
+      const purchases = [...state.purchases];
+      let imported = 0;
+
+      const ensureSupplier = (name?: string): string | undefined => {
+        if (!name?.trim()) return undefined;
+        const key = name.trim().toLowerCase();
+        const existing = supplierIdByName.get(key);
+        if (existing) return existing;
+        const supplier: Supplier = {
+          id: uid("supplier"),
+          name: name.trim(),
+          createdAt: now,
+        };
+        suppliers.push(supplier);
+        supplierIdByName.set(key, supplier.id);
+        return supplier.id;
+      };
+
+      const addTransaction = (
+        row: ImportRow,
+        description: string,
+        kind: Transaction["kind"],
+        supplierId?: string,
+        productId?: string,
+      ): string => {
+        const id = uid("tx");
+        transactions.unshift({
+          id,
+          kind,
+          description,
+          amountCents: row.amountCents,
+          quantity: kind === "sale" ? row.quantity : undefined,
+          productId,
+          supplierId,
+          paymentMethod: row.paymentMethod,
+          sourceType: "spreadsheet_import",
+          status: "processed",
+          occurredAt: row.occurredAt,
+          createdAt: now,
+        });
+        return id;
+      };
+
+      for (const row of rows) {
+        if (
+          row.kind === "sale" ||
+          row.kind === "expense" ||
+          row.kind === "withdrawal"
+        ) {
+          addTransaction(
+            row,
+            row.description,
+            row.kind,
+            undefined,
+            row.kind === "sale" && row.productName
+              ? productIdByName.get(row.productName.trim().toLowerCase())
+              : undefined,
+          );
+          imported += 1;
+          continue;
+        }
+
+        if (row.kind === "purchase") {
+          const supplierId = ensureSupplier(row.supplierName);
+          const productName = row.productName ?? row.description;
+          const productId = productIdByName.get(
+            productName.trim().toLowerCase(),
+          );
+          const quantity = row.quantity ?? 1;
+          const transactionId = row.paid
+            ? addTransaction(
+                row,
+                `Compra: ${productName}`,
+                "expense",
+                supplierId,
+                productId,
+              )
+            : undefined;
+          let billId: string | undefined;
+          if (!row.paid) {
+            billId = uid("bill");
+            bills.unshift({
+              id: billId,
+              supplierId,
+              description: `Compra: ${productName}`,
+              amountCents: row.amountCents,
+              // Mesmo prazo padrão da compra lançada pela interface.
+              dueDate:
+                row.dueDate ?? addDaysToDateOnly(todayDateOnly(), 14),
+              status: "open",
+              paymentMethod: row.paymentMethod,
+              sourceType: "spreadsheet_import",
+              createdAt: now,
+            });
+          }
+          purchases.unshift({
+            id: uid("purchase"),
+            supplierId,
+            productId,
+            productName,
+            quantity,
+            unitCostCents: Math.round(row.amountCents / quantity),
+            totalCents: row.amountCents,
+            billId,
+            transactionId,
+            sourceType: "spreadsheet_import",
+            occurredAt: row.occurredAt,
+            createdAt: now,
+          });
+          imported += 1;
+          continue;
+        }
+
+        if (row.kind === "bill") {
+          const supplierId = ensureSupplier(row.supplierName);
+          const transactionId = row.paid
+            ? addTransaction(
+                row,
+                `Conta: ${row.description}`,
+                "expense",
+                supplierId,
+              )
+            : undefined;
+          bills.unshift({
+            id: uid("bill"),
+            supplierId,
+            description: row.description,
+            amountCents: row.amountCents,
+            // Mesmo prazo padrão da conta criada pela interface.
+            dueDate: row.dueDate ?? addDaysToDateOnly(todayDateOnly(), 7),
+            status: row.paid ? "paid" : "open",
+            paidAt: row.paid ? row.occurredAt : undefined,
+            paymentMethod: row.paymentMethod,
+            transactionId,
+            sourceType: "spreadsheet_import",
+            createdAt: now,
+          });
+          imported += 1;
+        }
+      }
+
+      setState((previous) => ({
+        ...previous,
+        suppliers,
+        transactions,
+        bills,
+        purchases,
+      }));
+
+      return {
+        imported,
+        skipped: Math.max(0, rows.length - imported),
+        errors: [],
+      };
+    },
+    [refresh, state.bills, state.products, state.purchases, state.suppliers, state.transactions],
   );
 
   const reviewPending = useCallback(
@@ -664,6 +1454,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const setProductSupplier = useCallback(
+    async (productId: string, supplierId?: string): Promise<void> => {
+      const active = cloudRef.current;
+      if (active) {
+        await setCloudProductSupplier(
+          active.client,
+          productId,
+          supplierId ?? null,
+        );
+        await refresh();
+        return;
+      }
+
+      setState((previous) => ({
+        ...previous,
+        products: previous.products.map((product) =>
+          product.id === productId
+            ? { ...product, supplierId }
+            : product,
+        ),
+      }));
+    },
+    [refresh],
+  );
+
   const deleteTransaction = useCallback(
     async (transactionId: string): Promise<void> => {
       const active = cloudRef.current;
@@ -710,6 +1525,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...previous,
           products,
           inventoryLogs,
+          bills: previous.bills.map((bill) =>
+            bill.transactionId === transactionId && bill.status === "paid"
+              ? {
+                  ...bill,
+                  status: "open",
+                  paidAt: undefined,
+                  paymentMethod: undefined,
+                  transactionId: undefined,
+                }
+              : bill,
+          ),
           transactions: previous.transactions.filter(
             (item) => item.id !== transactionId,
           ),
@@ -863,6 +1689,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.products],
   );
 
+  const openBills = useMemo(
+    () =>
+      state.bills
+        .filter((bill) => bill.status === "open")
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+    [state.bills],
+  );
+
   const totals = useMemo(() => {
     let todayInCents = 0;
     let todayOutCents = 0;
@@ -911,6 +1745,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       products: state.products,
       transactions: state.transactions,
       inventoryLogs: state.inventoryLogs,
+      suppliers: state.suppliers,
+      purchases: state.purchases,
+      bills: state.bills,
+      openBills,
       pendingTransactions,
       lowStockProducts,
       todayInCents: totals.todayInCents,
@@ -924,11 +1762,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       retryCloud,
       recordSale,
       recordExpense,
+      recordWithdrawal,
       addStock,
       reviewPending,
       discardPending,
       updateProduct,
+      setProductSupplier,
       deleteTransaction,
+      addSupplier,
+      updateSupplier,
+      deleteSupplier,
+      registerPurchase,
+      addBill,
+      payBill,
+      deleteBill,
+      importRows,
       setSegment,
       resetDemo,
       simulatePending,
@@ -939,6 +1787,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       state.products,
       state.transactions,
       state.inventoryLogs,
+      state.suppliers,
+      state.purchases,
+      state.bills,
+      openBills,
       pendingTransactions,
       lowStockProducts,
       totals,
@@ -948,11 +1800,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       retryCloud,
       recordSale,
       recordExpense,
+      recordWithdrawal,
       addStock,
       reviewPending,
       discardPending,
       updateProduct,
+      setProductSupplier,
       deleteTransaction,
+      addSupplier,
+      updateSupplier,
+      deleteSupplier,
+      registerPurchase,
+      addBill,
+      payBill,
+      deleteBill,
+      importRows,
       setSegment,
       resetDemo,
       simulatePending,

@@ -7,6 +7,8 @@ import { BalanceCard } from "./balance-card";
 import { QuickActions } from "./quick-actions";
 import { PendingReviewCard } from "./pending-review-card";
 import { ActivityFeed } from "./activity-feed";
+import { PayablesCard } from "./payables-card";
+import { InsightsCard } from "./insights-card";
 
 export function HomeView() {
   const { business, cloudStatus, cloudMessage, retryCloud } = useApp();
@@ -53,7 +55,11 @@ export function HomeView() {
           <QuickActions />
         </div>
 
-        <ActivityFeed />
+        <div className="space-y-5">
+          <PayablesCard />
+          <InsightsCard />
+          <ActivityFeed />
+        </div>
       </div>
     </div>
   );

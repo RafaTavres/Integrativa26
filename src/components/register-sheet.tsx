@@ -6,7 +6,10 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Camera,
+  FileSpreadsheet,
+  HandCoins,
   Mic,
+  ShoppingBasket,
   type LucideIcon,
 } from "lucide-react";
 import { Sheet } from "./sheet";
@@ -24,7 +27,7 @@ interface OptionProps {
   label: string;
   hint: string;
   onClick: () => void;
-  tone: "sage" | "terracotta" | "mustard" | "sand";
+  tone: "sage" | "terracotta" | "mustard" | "sand" | "blush";
   disabled?: boolean;
 }
 
@@ -33,6 +36,7 @@ const TONES: Record<OptionProps["tone"], string> = {
   terracotta: "bg-terracotta-soft text-terracotta-dark",
   mustard: "bg-mustard-soft text-mustard-dark",
   sand: "bg-sand text-ink",
+  blush: "bg-blush text-terracotta-dark",
 };
 
 function Option({ icon: Icon, label, hint, onClick, tone, disabled }: OptionProps) {
@@ -41,18 +45,18 @@ function Option({ icon: Icon, label, hint, onClick, tone, disabled }: OptionProp
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex min-h-[7.25rem] flex-col items-start justify-between gap-3 rounded-[4px] border border-line bg-paper p-3.5 text-left transition-colors hover:border-sand-dark hover:bg-cream active:translate-y-[1px] disabled:opacity-60"
+      className="flex min-h-[6.75rem] flex-col items-start justify-between gap-2.5 rounded-[4px] border border-line bg-paper p-3 text-left transition-colors hover:border-sand-dark hover:bg-cream active:translate-y-[1px] disabled:opacity-60"
     >
       <span
         className={cn(
-          "grid size-10 flex-none place-items-center rounded-[4px]",
+          "grid size-9 flex-none place-items-center rounded-[4px]",
           TONES[tone],
         )}
       >
-        <Icon className="size-5" strokeWidth={1.9} />
+        <Icon className="size-[1.1rem]" strokeWidth={1.9} />
       </span>
       <span>
-        <span className="block text-sm font-bold leading-tight text-ink">
+        <span className="block text-[0.8125rem] font-bold leading-tight text-ink">
           {label}
         </span>
         <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted">
@@ -65,7 +69,13 @@ function Option({ icon: Icon, label, hint, onClick, tone, disabled }: OptionProp
 
 export function RegisterSheet({ onClose }: RegisterSheetProps) {
   const { segment, simulatePending } = useApp();
-  const { openSale, openExpense, openReceipt } = useActions();
+  const {
+    openSale,
+    openExpense,
+    openReceipt,
+    openPurchase,
+    openWithdrawal,
+  } = useActions();
   const { toast } = useToast();
   const router = useRouter();
   const [sendingAudio, setSendingAudio] = useState(false);
@@ -94,10 +104,15 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
     }
   }
 
+  function openImport() {
+    onClose();
+    router.push("/importar");
+  }
+
   return (
     <Sheet
       title="Registrar"
-      description="Escolha como quer lançar. Pode digitar, fotografar a nota ou falar."
+      description="Escolha o que aconteceu. Pode digitar, fotografar a nota, falar ou importar."
       onClose={onClose}
     >
       <div className="space-y-5">
@@ -118,6 +133,20 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
           />
           <Option
             tone="mustard"
+            icon={ShoppingBasket}
+            label="Compra"
+            hint="Mercadoria e fornecedor"
+            onClick={() => openPurchase()}
+          />
+          <Option
+            tone="blush"
+            icon={HandCoins}
+            label="Retirada"
+            hint="Dinheiro que você tirou"
+            onClick={openWithdrawal}
+          />
+          <Option
+            tone="sand"
             icon={Camera}
             label="Foto da nota"
             hint="Cupom, nota ou comprovante"
@@ -133,13 +162,33 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
           />
         </div>
 
+        <button
+          type="button"
+          onClick={openImport}
+          className="flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
+        >
+          <span className="grid size-9 flex-none place-items-center rounded-[4px] bg-paper text-sage-dark">
+            <FileSpreadsheet className="size-4" strokeWidth={2} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[0.8125rem] font-bold text-ink">
+              Importar planilha
+            </span>
+            <span className="mt-0.5 block text-[0.6875rem] text-muted">
+              Traga vendas, gastos e compras de uma vez
+            </span>
+          </span>
+          <span className="badge bg-ink text-cream">CSV ou XLSX</span>
+        </button>
+
         <div className="rounded-[4px] border border-line bg-cream p-3">
           <p className="text-[0.6875rem] font-bold uppercase tracking-[0.1em] text-muted">
             Como funciona
           </p>
           <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ink/80">
-            Digitar e fotografar já salvam na hora. Áudio entra como rascunho
-            para você conferir antes de confirmar.
+            Digitar e fotografar já salvam na hora. Compra a prazo cria a conta
+            a pagar sem tirar dinheiro do caixa. Áudio entra como rascunho para
+            você conferir antes de confirmar.
           </p>
         </div>
       </div>

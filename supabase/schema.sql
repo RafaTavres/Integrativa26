@@ -29,7 +29,10 @@ do $$ begin
     'manual',
     'audio_transcription',
     'image_recognition',
-    'whatsapp_import'
+    'whatsapp_import',
+    'email_import',
+    'qr_code',
+    'spreadsheet_import'
   );
 exception when duplicate_object then null;
 end $$;
@@ -40,9 +43,21 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
-  create type public.transaction_kind as enum ('sale', 'expense');
+  create type public.transaction_kind as enum (
+    'sale',
+    'expense',
+    'withdrawal'
+  );
 exception when duplicate_object then null;
 end $$;
+
+-- Bancos criados antes dos novos conectores/retiradas recebem os valores.
+-- ADD VALUE é idempotente e não pode ser usado na mesma transação em versões
+-- antigas do Postgres; por isso fica fora do bloco DO.
+alter type public.source_type add value if not exists 'email_import';
+alter type public.source_type add value if not exists 'qr_code';
+alter type public.source_type add value if not exists 'spreadsheet_import';
+alter type public.transaction_kind add value if not exists 'withdrawal';
 
 do $$ begin
   create type public.payment_method as enum ('pix', 'cash', 'card', 'other');
@@ -51,6 +66,11 @@ end $$;
 
 do $$ begin
   create type public.inventory_direction as enum ('in', 'out', 'adjustment');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type public.bill_status as enum ('open', 'paid', 'canceled');
 exception when duplicate_object then null;
 end $$;
 
@@ -109,6 +129,26 @@ create index if not exists memberships_user_idx
   on public.memberships (user_id);
 
 -- ----------------------------------------------------------------------------
+-- Fornecedores
+-- ----------------------------------------------------------------------------
+create table if not exists public.suppliers (
+  id          uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  name        text not null check (char_length(btrim(name)) between 1 and 120),
+  phone       text,
+  email       text,
+  notes       text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists suppliers_business_idx
+  on public.suppliers (business_id, name);
+
+create unique index if not exists suppliers_business_name_unique
+  on public.suppliers (business_id, lower(btrim(name)));
+
+-- ----------------------------------------------------------------------------
 -- Produtos
 -- ----------------------------------------------------------------------------
 create table if not exists public.products (
@@ -129,6 +169,13 @@ create table if not exists public.products (
 
 alter table public.products
   add column if not exists track_stock boolean not null default true;
+
+alter table public.products
+  add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+
+create index if not exists products_supplier_idx
+  on public.products (supplier_id)
+  where supplier_id is not null;
 
 create index if not exists products_business_idx
   on public.products (business_id, name);
@@ -173,6 +220,14 @@ create index if not exists transactions_product_idx
   on public.transactions (product_id)
   where product_id is not null;
 
+-- Fornecedor do lançamento (compras e contas pagas). Retiradas não têm.
+alter table public.transactions
+  add column if not exists supplier_id uuid references public.suppliers(id) on delete set null;
+
+create index if not exists transactions_supplier_idx
+  on public.transactions (supplier_id)
+  where supplier_id is not null;
+
 -- ----------------------------------------------------------------------------
 -- Movimentações de estoque
 -- ----------------------------------------------------------------------------
@@ -201,6 +256,75 @@ create index if not exists inventory_logs_product_idx
 create index if not exists inventory_logs_transaction_idx
   on public.inventory_logs (transaction_id)
   where transaction_id is not null;
+
+-- ----------------------------------------------------------------------------
+-- Contas a pagar
+-- ----------------------------------------------------------------------------
+-- Boleto, carnê, compra a prazo ou aluguel. Quando é paga, gera uma despesa
+-- em transactions e guarda o vínculo para permitir estorno.
+create table if not exists public.bills (
+  id             uuid primary key default gen_random_uuid(),
+  business_id    uuid not null references public.businesses(id) on delete cascade,
+  supplier_id    uuid references public.suppliers(id) on delete set null,
+  description    text not null check (char_length(btrim(description)) between 1 and 200),
+  amount_cents   integer not null check (amount_cents > 0),
+  due_date       date not null,
+  status         public.bill_status not null default 'open',
+  paid_at        timestamptz,
+  payment_method public.payment_method,
+  transaction_id uuid references public.transactions(id) on delete set null,
+  source_type    public.source_type not null default 'manual',
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now(),
+  constraint bills_paid_consistency check (
+    (status = 'paid' and paid_at is not null)
+    or (status <> 'paid')
+  )
+);
+
+create index if not exists bills_business_due_idx
+  on public.bills (business_id, due_date);
+
+create index if not exists bills_open_idx
+  on public.bills (business_id, due_date)
+  where status = 'open';
+
+create index if not exists bills_supplier_idx
+  on public.bills (supplier_id)
+  where supplier_id is not null;
+
+-- ----------------------------------------------------------------------------
+-- Compras (histórico de preço por fornecedor)
+-- ----------------------------------------------------------------------------
+-- Cada compra guarda o custo unitário praticado. É daqui que saem a comparação
+-- de preços e a atualização do custo médio do produto.
+create table if not exists public.purchases (
+  id                uuid primary key default gen_random_uuid(),
+  business_id       uuid not null references public.businesses(id) on delete cascade,
+  supplier_id       uuid references public.suppliers(id) on delete set null,
+  product_id        uuid references public.products(id) on delete set null,
+  product_name      text not null check (char_length(btrim(product_name)) between 1 and 120),
+  quantity          numeric(12,3) not null check (quantity > 0),
+  unit_cost_cents   integer not null check (unit_cost_cents >= 0),
+  total_cents       integer not null check (total_cents >= 0),
+  bill_id           uuid references public.bills(id) on delete set null,
+  transaction_id    uuid references public.transactions(id) on delete set null,
+  inventory_log_id  uuid references public.inventory_logs(id) on delete set null,
+  source_type       public.source_type not null default 'manual',
+  occurred_at       timestamptz not null default now(),
+  created_at        timestamptz not null default now()
+);
+
+create index if not exists purchases_business_occurred_idx
+  on public.purchases (business_id, occurred_at desc);
+
+create index if not exists purchases_supplier_idx
+  on public.purchases (supplier_id, occurred_at desc)
+  where supplier_id is not null;
+
+create index if not exists purchases_product_idx
+  on public.purchases (product_id, occurred_at desc)
+  where product_id is not null;
 
 -- ----------------------------------------------------------------------------
 -- Ingestão de dados não estruturados (áudio, foto, WhatsApp)
@@ -232,6 +356,24 @@ create index if not exists ingestion_events_pending_idx
   on public.ingestion_events (business_id, created_at desc)
   where status in ('received', 'processing', 'pending_review');
 
+-- Campos usados pelos conectores futuros (WhatsApp, e-mail/XML, QR Code).
+alter table public.ingestion_events
+  add column if not exists external_id text;
+alter table public.ingestion_events
+  add column if not exists external_channel text;
+alter table public.ingestion_events
+  add column if not exists payload jsonb;
+alter table public.ingestion_events
+  add column if not exists linked_supplier_id uuid references public.suppliers(id) on delete set null;
+alter table public.ingestion_events
+  add column if not exists linked_bill_id uuid references public.bills(id) on delete set null;
+alter table public.ingestion_events
+  add column if not exists review_reason text;
+
+create unique index if not exists ingestion_events_external_unique
+  on public.ingestion_events (business_id, external_channel, external_id)
+  where external_id is not null;
+
 -- ----------------------------------------------------------------------------
 -- updated_at automático
 -- ----------------------------------------------------------------------------
@@ -253,6 +395,16 @@ create trigger businesses_set_updated_at
 drop trigger if exists products_set_updated_at on public.products;
 create trigger products_set_updated_at
   before update on public.products
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists suppliers_set_updated_at on public.suppliers;
+create trigger suppliers_set_updated_at
+  before update on public.suppliers
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists bills_set_updated_at on public.bills;
+create trigger bills_set_updated_at
+  before update on public.bills
   for each row execute function public.set_updated_at();
 
 -- ----------------------------------------------------------------------------
@@ -300,8 +452,11 @@ grant execute on function public.is_business_owner(uuid) to authenticated;
 alter table public.businesses       enable row level security;
 alter table public.memberships      enable row level security;
 alter table public.products         enable row level security;
+alter table public.suppliers        enable row level security;
 alter table public.transactions     enable row level security;
 alter table public.inventory_logs   enable row level security;
+alter table public.bills            enable row level security;
+alter table public.purchases        enable row level security;
 alter table public.ingestion_events enable row level security;
 
 -- businesses
@@ -376,6 +531,32 @@ create policy "products_delete_members"
   to authenticated
   using (public.is_business_member(business_id));
 
+-- suppliers
+drop policy if exists "suppliers_select_members" on public.suppliers;
+create policy "suppliers_select_members"
+  on public.suppliers for select
+  to authenticated
+  using (public.is_business_member(business_id));
+
+drop policy if exists "suppliers_insert_members" on public.suppliers;
+create policy "suppliers_insert_members"
+  on public.suppliers for insert
+  to authenticated
+  with check (public.is_business_member(business_id));
+
+drop policy if exists "suppliers_update_members" on public.suppliers;
+create policy "suppliers_update_members"
+  on public.suppliers for update
+  to authenticated
+  using (public.is_business_member(business_id))
+  with check (public.is_business_member(business_id));
+
+drop policy if exists "suppliers_delete_members" on public.suppliers;
+create policy "suppliers_delete_members"
+  on public.suppliers for delete
+  to authenticated
+  using (public.is_business_member(business_id));
+
 -- transactions
 drop policy if exists "transactions_select_members" on public.transactions;
 create policy "transactions_select_members"
@@ -421,6 +602,61 @@ create policy "inventory_logs_update_members"
 
 -- Sem policy de DELETE em inventory_logs: mexer no log direto dessincroniza
 -- o estoque. A RPC delete_transaction() cuida do estorno.
+
+-- bills
+drop policy if exists "bills_select_members" on public.bills;
+create policy "bills_select_members"
+  on public.bills for select
+  to authenticated
+  using (public.is_business_member(business_id));
+
+drop policy if exists "bills_insert_members" on public.bills;
+create policy "bills_insert_members"
+  on public.bills for insert
+  to authenticated
+  with check (public.is_business_member(business_id));
+
+drop policy if exists "bills_update_members" on public.bills;
+create policy "bills_update_members"
+  on public.bills for update
+  to authenticated
+  using (public.is_business_member(business_id))
+  with check (public.is_business_member(business_id));
+
+drop policy if exists "bills_delete_members" on public.bills;
+create policy "bills_delete_members"
+  on public.bills for delete
+  to authenticated
+  using (
+    public.is_business_member(business_id)
+    and status = 'open'
+  );
+
+-- purchases
+drop policy if exists "purchases_select_members" on public.purchases;
+create policy "purchases_select_members"
+  on public.purchases for select
+  to authenticated
+  using (public.is_business_member(business_id));
+
+drop policy if exists "purchases_insert_members" on public.purchases;
+create policy "purchases_insert_members"
+  on public.purchases for insert
+  to authenticated
+  with check (public.is_business_member(business_id));
+
+drop policy if exists "purchases_update_members" on public.purchases;
+create policy "purchases_update_members"
+  on public.purchases for update
+  to authenticated
+  using (public.is_business_member(business_id))
+  with check (public.is_business_member(business_id));
+
+drop policy if exists "purchases_delete_members" on public.purchases;
+create policy "purchases_delete_members"
+  on public.purchases for delete
+  to authenticated
+  using (public.is_business_member(business_id));
 
 -- ingestion_events
 drop policy if exists "ingestion_events_select_members" on public.ingestion_events;
@@ -591,6 +827,261 @@ grant execute on function public.register_sale(
 ) to authenticated;
 
 -- ----------------------------------------------------------------------------
+-- RPC: compra com fornecedor (estoque + preço + caixa ou conta a pagar)
+-- ----------------------------------------------------------------------------
+-- Uma única transação faz: entrada no estoque, custo médio, histórico de
+-- preço, log e a saída financeira (paga agora) ou a conta a pagar.
+create or replace function public.register_purchase(
+  p_business_id uuid,
+  p_supplier_id uuid default null,
+  p_product_id uuid default null,
+  p_product_name text default null,
+  p_quantity numeric default 1,
+  p_unit_cost_cents integer default 0,
+  p_paid_now boolean default true,
+  p_due_date date default null,
+  p_payment_method public.payment_method default 'other',
+  p_source_type public.source_type default 'manual',
+  p_raw_input text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_product public.products%rowtype;
+  v_product_id uuid;
+  v_product_name text;
+  v_total integer;
+  v_new_stock numeric;
+  v_purchase_id uuid := gen_random_uuid();
+  v_transaction_id uuid;
+  v_bill_id uuid;
+  v_log_id uuid;
+  v_suggested_price integer;
+begin
+  if not public.is_business_member(p_business_id) then
+    raise exception 'Sem acesso a este negócio.'
+      using errcode = '42501';
+  end if;
+
+  if p_quantity is null or p_quantity <= 0 then
+    raise exception 'Quantidade inválida.';
+  end if;
+
+  if p_unit_cost_cents is null or p_unit_cost_cents < 0 then
+    raise exception 'Custo inválido.';
+  end if;
+
+  v_total := round(p_quantity * p_unit_cost_cents)::integer;
+  if v_total <= 0 then
+    raise exception 'Informe quanto custou a compra.';
+  end if;
+
+  if p_supplier_id is not null and not exists (
+    select 1 from public.suppliers
+     where id = p_supplier_id
+       and business_id = p_business_id
+  ) then
+    raise exception 'Fornecedor não encontrado.';
+  end if;
+
+  if p_product_id is not null then
+    select *
+      into v_product
+      from public.products
+     where id = p_product_id
+       and business_id = p_business_id
+       for update;
+
+    if not found then
+      raise exception 'Item não encontrado.';
+    end if;
+
+    v_product_id := v_product.id;
+    v_product_name := v_product.name;
+    v_new_stock := v_product.stock + p_quantity;
+
+    update public.products
+       set stock = v_new_stock,
+           cost_cents = round(
+             (v_product.stock * v_product.cost_cents + v_total) / v_new_stock
+           )::integer,
+           supplier_id = coalesce(p_supplier_id, supplier_id)
+     where id = v_product_id;
+  else
+    v_product_name := btrim(coalesce(p_product_name, ''));
+    if char_length(v_product_name) = 0 then
+      raise exception 'Diga o nome do item comprado.';
+    end if;
+
+    select *
+      into v_product
+      from public.products
+     where business_id = p_business_id
+       and lower(btrim(name)) = lower(v_product_name)
+       and track_stock
+     for update;
+
+    if found then
+      v_product_id := v_product.id;
+      v_new_stock := v_product.stock + p_quantity;
+
+      update public.products
+         set stock = v_new_stock,
+             cost_cents = round(
+               (v_product.stock * v_product.cost_cents + v_total) / v_new_stock
+             )::integer,
+             supplier_id = coalesce(p_supplier_id, supplier_id)
+       where id = v_product_id;
+    else
+      v_suggested_price := case
+        when p_unit_cost_cents > 0
+          then greatest(100, (ceil((p_unit_cost_cents * 1.8) / 100.0) * 100)::integer)
+        else 0
+      end;
+
+      insert into public.products (
+        business_id, name, unit, unit_plural, stock, min_stock,
+        cost_cents, price_cents, track_stock, supplier_id
+      ) values (
+        p_business_id, v_product_name, 'un', 'un', p_quantity, 2,
+        p_unit_cost_cents, v_suggested_price, true, p_supplier_id
+      )
+      returning id into v_product_id;
+    end if;
+  end if;
+
+  insert into public.inventory_logs (
+    business_id, product_id, direction, quantity, unit_cost_cents,
+    transaction_id, source_type, status, occurred_at
+  ) values (
+    p_business_id, v_product_id, 'in', p_quantity, p_unit_cost_cents,
+    null, p_source_type, 'processed', now()
+  )
+  returning id into v_log_id;
+
+  if p_paid_now then
+    insert into public.transactions (
+      business_id, kind, description, amount_cents, supplier_id,
+      payment_method, source_type, status, raw_input, occurred_at
+    ) values (
+      p_business_id, 'expense', 'Compra: ' || v_product_name, v_total,
+      p_supplier_id, p_payment_method, p_source_type, 'processed',
+      p_raw_input, now()
+    )
+    returning id into v_transaction_id;
+
+    update public.inventory_logs
+       set transaction_id = v_transaction_id
+     where id = v_log_id;
+  else
+    insert into public.bills (
+      business_id, supplier_id, description, amount_cents, due_date,
+      status, payment_method, source_type
+    ) values (
+      p_business_id, p_supplier_id, 'Compra: ' || v_product_name, v_total,
+      coalesce(p_due_date, current_date + 14), 'open', p_payment_method,
+      p_source_type
+    )
+    returning id into v_bill_id;
+  end if;
+
+  insert into public.purchases (
+    id, business_id, supplier_id, product_id, product_name, quantity,
+    unit_cost_cents, total_cents, bill_id, transaction_id,
+    inventory_log_id, source_type, occurred_at
+  ) values (
+    v_purchase_id, p_business_id, p_supplier_id, v_product_id,
+    v_product_name, p_quantity, p_unit_cost_cents, v_total, v_bill_id,
+    v_transaction_id, v_log_id, p_source_type, now()
+  );
+
+  return jsonb_build_object(
+    'product_id', v_product_id,
+    'purchase_id', v_purchase_id,
+    'bill_id', v_bill_id,
+    'transaction_id', v_transaction_id,
+    'total_cents', v_total
+  );
+end;
+$$;
+
+revoke all on function public.register_purchase(
+  uuid, uuid, uuid, text, numeric, integer, boolean, date,
+  public.payment_method, public.source_type, text
+) from public;
+grant execute on function public.register_purchase(
+  uuid, uuid, uuid, text, numeric, integer, boolean, date,
+  public.payment_method, public.source_type, text
+) to authenticated;
+
+-- ----------------------------------------------------------------------------
+-- RPC: paga uma conta e lança a despesa no caixa
+-- ----------------------------------------------------------------------------
+create or replace function public.pay_bill(
+  p_bill_id uuid,
+  p_payment_method public.payment_method default 'pix',
+  p_paid_at timestamptz default now()
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_bill public.bills%rowtype;
+  v_transaction_id uuid := gen_random_uuid();
+begin
+  select *
+    into v_bill
+    from public.bills
+   where id = p_bill_id
+     for update;
+
+  if not found then
+    raise exception 'Conta não encontrada.';
+  end if;
+
+  if not public.is_business_member(v_bill.business_id) then
+    raise exception 'Sem acesso a este negócio.'
+      using errcode = '42501';
+  end if;
+
+  if v_bill.status <> 'open' then
+    raise exception 'Esta conta não está em aberto.';
+  end if;
+
+  insert into public.transactions (
+    id, business_id, kind, description, amount_cents, supplier_id,
+    payment_method, source_type, status, occurred_at
+  ) values (
+    v_transaction_id, v_bill.business_id, 'expense',
+    'Conta: ' || v_bill.description, v_bill.amount_cents,
+    v_bill.supplier_id, p_payment_method, v_bill.source_type,
+    'processed', coalesce(p_paid_at, now())
+  );
+
+  update public.bills
+     set status = 'paid',
+         paid_at = coalesce(p_paid_at, now()),
+         payment_method = p_payment_method,
+         transaction_id = v_transaction_id
+   where id = p_bill_id;
+
+  return v_transaction_id;
+end;
+$$;
+
+revoke all on function public.pay_bill(
+  uuid, public.payment_method, timestamptz
+) from public;
+grant execute on function public.pay_bill(
+  uuid, public.payment_method, timestamptz
+) to authenticated;
+
+-- ----------------------------------------------------------------------------
 -- RPC: confirma um lançamento pendente da IA
 -- ----------------------------------------------------------------------------
 -- Atualiza o rascunho, baixa o estoque (quando o item controla quantidade) e
@@ -743,6 +1234,15 @@ begin
   delete from public.inventory_logs
    where transaction_id = p_transaction_id;
 
+  -- Se era o pagamento de uma conta, ela volta para o aberto.
+  update public.bills
+     set status = 'open',
+         paid_at = null,
+         payment_method = null,
+         transaction_id = null
+   where transaction_id = p_transaction_id
+     and status = 'paid';
+
   delete from public.transactions
    where id = p_transaction_id;
 end;
@@ -761,7 +1261,8 @@ select
   business_id,
   (occurred_at at time zone 'America/Sao_Paulo')::date as day,
   coalesce(sum(amount_cents) filter (where kind = 'sale'), 0)::bigint as in_cents,
-  coalesce(sum(amount_cents) filter (where kind = 'expense'), 0)::bigint as out_cents,
+  -- `withdrawal` também é dinheiro que saiu, mas não é despesa do negócio.
+  coalesce(sum(amount_cents) filter (where kind <> 'sale'), 0)::bigint as out_cents,
   count(*)::bigint as transaction_count
 from public.transactions
 where status = 'processed'

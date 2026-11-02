@@ -37,6 +37,41 @@ export interface SegmentPendingSeed {
   aiConfidence: number;
 }
 
+export interface SegmentSupplierSeed {
+  key: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+}
+
+export interface SegmentPurchaseSeed {
+  key: string;
+  supplierKey: string;
+  productKey?: string;
+  productName?: string;
+  quantity: number;
+  unitCostCents: number;
+  /** Dias atrás em que a compra aconteceu. */
+  dayOffset: number;
+  /** Compra paga no ato ou conta a pagar. */
+  paid: boolean;
+  /** Dias a partir de hoje para o vencimento (aceita negativo). */
+  dueDayOffset?: number;
+  paymentMethod?: PaymentMethod;
+}
+
+export interface SegmentBillSeed {
+  key: string;
+  supplierKey?: string;
+  description: string;
+  amountCents: number;
+  /** Dias a partir de hoje para o vencimento (aceita negativo). */
+  dueDayOffset: number;
+  paymentMethod?: PaymentMethod;
+  notes?: string;
+}
+
 export interface SegmentProfile {
   id: SegmentId;
   label: string;
@@ -55,6 +90,9 @@ export interface SegmentProfile {
   products: SegmentProductSeed[];
   transactions: SegmentTransactionSeed[];
   pending: SegmentPendingSeed;
+  suppliers: SegmentSupplierSeed[];
+  purchases: SegmentPurchaseSeed[];
+  bills: SegmentBillSeed[];
 }
 
 export const SEGMENTS: Record<SegmentId, SegmentProfile> = {
@@ -127,6 +165,17 @@ export const SEGMENTS: Record<SegmentId, SegmentProfile> = {
         minStock: 10,
         costCents: 150,
         priceCents: 700,
+        trackStock: true,
+      },
+      {
+        key: "torta-limao",
+        name: "Torta de limão",
+        unit: "torta",
+        unitPlural: "tortas",
+        stock: 3,
+        minStock: 1,
+        costCents: 2200,
+        priceCents: 6500,
         trackStock: true,
       },
     ],
@@ -303,6 +352,117 @@ export const SEGMENTS: Record<SegmentId, SegmentProfile> = {
         hour: 14,
         minute: 0,
       },
+      {
+        key: "retirada-1",
+        kind: "withdrawal",
+        description: "Retirada para casa",
+        amountCents: 8000,
+        paymentMethod: "pix",
+        dayOffset: 2,
+        hour: 18,
+        minute: 10,
+      },
+      {
+        key: "retirada-2",
+        kind: "withdrawal",
+        description: "Retirada para casa",
+        amountCents: 4000,
+        paymentMethod: "cash",
+        dayOffset: 8,
+        hour: 18,
+        minute: 30,
+      },
+    ],
+    suppliers: [
+      {
+        key: "atacadao",
+        name: "Atacadão do Doce",
+        phone: "(11) 98812-4410",
+        email: "pedidos@atacadaododoce.com.br",
+        notes: "Entrega às terças. Pedido mínimo de R$ 150,00.",
+      },
+      {
+        key: "mineira",
+        name: "Distribuidora Mineira",
+        phone: "(11) 97744-2098",
+        email: "vendas@distribuidoramineira.com.br",
+        notes: "Pão de queijo e doces congelados.",
+      },
+      {
+        key: "embalagens",
+        name: "Embalagens Bianca",
+        phone: "(11) 96631-7752",
+        email: "contato@embalagensbianca.com.br",
+        notes: "Sacolas, caixas e etiquetas.",
+      },
+    ],
+    purchases: [
+      {
+        key: "pao-queijo-atacadao",
+        supplierKey: "atacadao",
+        productKey: "pao-queijo",
+        quantity: 10,
+        unitCostCents: 450,
+        dayOffset: 25,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "pao-queijo-mineira",
+        supplierKey: "mineira",
+        productKey: "pao-queijo",
+        quantity: 12,
+        unitCostCents: 420,
+        dayOffset: 8,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "brigadeiro-atacadao",
+        supplierKey: "atacadao",
+        productKey: "brigadeiro",
+        quantity: 50,
+        unitCostCents: 100,
+        dayOffset: 18,
+        paid: true,
+        paymentMethod: "cash",
+      },
+      {
+        key: "brigadeiro-mineira",
+        supplierKey: "mineira",
+        productKey: "brigadeiro",
+        quantity: 50,
+        unitCostCents: 95,
+        dayOffset: 5,
+        paid: true,
+        paymentMethod: "pix",
+      },
+    ],
+    bills: [
+      {
+        key: "embalagens",
+        supplierKey: "embalagens",
+        description: "Embalagens e sacolas",
+        amountCents: 9200,
+        dueDayOffset: 4,
+        paymentMethod: "pix",
+      },
+      {
+        key: "atacadao",
+        supplierKey: "atacadao",
+        description: "Farinha, açúcar e chocolate",
+        amountCents: 18650,
+        dueDayOffset: 9,
+        paymentMethod: "pix",
+      },
+      {
+        key: "mineira",
+        supplierKey: "mineira",
+        description: "Pão de queijo e brigadeiro",
+        amountCents: 12800,
+        dueDayOffset: -3,
+        paymentMethod: "pix",
+      },
     ],
     pending: {
       productKey: "bolo-cenoura",
@@ -383,6 +543,17 @@ export const SEGMENTS: Record<SegmentId, SegmentProfile> = {
         minStock: 2,
         costCents: 1200,
         priceCents: 2500,
+        trackStock: true,
+      },
+      {
+        key: "cera",
+        name: "Cera modeladora",
+        unit: "pote",
+        unitPlural: "potes",
+        stock: 8,
+        minStock: 2,
+        costCents: 2200,
+        priceCents: 4500,
         trackStock: true,
       },
     ],
@@ -513,6 +684,117 @@ export const SEGMENTS: Record<SegmentId, SegmentProfile> = {
         hour: 17,
         minute: 0,
       },
+      {
+        key: "retirada-1",
+        kind: "withdrawal",
+        description: "Retirada para casa",
+        amountCents: 8000,
+        paymentMethod: "pix",
+        dayOffset: 3,
+        hour: 19,
+        minute: 0,
+      },
+      {
+        key: "retirada-2",
+        kind: "withdrawal",
+        description: "Retirada para casa",
+        amountCents: 4000,
+        paymentMethod: "cash",
+        dayOffset: 10,
+        hour: 19,
+        minute: 20,
+      },
+    ],
+    suppliers: [
+      {
+        key: "barber",
+        name: "Distribuidora Barber Shop",
+        phone: "(11) 98110-3321",
+        email: "pedidos@barbershop.com.br",
+        notes: "Pomadas, shampoos e material de trabalho.",
+      },
+      {
+        key: "laminas",
+        name: "Casa das Lâminas",
+        phone: "(11) 97021-8844",
+        email: "vendas@casadaslaminas.com.br",
+        notes: "Lâminas, navalhas e descartáveis.",
+      },
+      {
+        key: "bela",
+        name: "Bela Imagem Cosméticos",
+        phone: "(11) 95532-7710",
+        email: "atendimento@belaimagem.com.br",
+        notes: "Linha de acabamento e barba.",
+      },
+    ],
+    purchases: [
+      {
+        key: "pomada-barber",
+        supplierKey: "barber",
+        productKey: "pomada",
+        quantity: 6,
+        unitCostCents: 1600,
+        dayOffset: 22,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "pomada-bela",
+        supplierKey: "bela",
+        productKey: "pomada",
+        quantity: 6,
+        unitCostCents: 1750,
+        dayOffset: 9,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "shampoo-barber",
+        supplierKey: "barber",
+        productKey: "shampoo",
+        quantity: 6,
+        unitCostCents: 1100,
+        dayOffset: 14,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "shampoo-bela",
+        supplierKey: "bela",
+        productKey: "shampoo",
+        quantity: 6,
+        unitCostCents: 1050,
+        dayOffset: 4,
+        paid: true,
+        paymentMethod: "cash",
+      },
+    ],
+    bills: [
+      {
+        key: "barber",
+        supplierKey: "barber",
+        description: "Pomadas e shampoos",
+        amountCents: 11200,
+        dueDayOffset: 6,
+        paymentMethod: "pix",
+      },
+      {
+        key: "laminas",
+        supplierKey: "laminas",
+        description: "Lâminas e navalhas",
+        amountCents: 5800,
+        dueDayOffset: -2,
+        paymentMethod: "pix",
+      },
+      {
+        key: "bela",
+        supplierKey: "bela",
+        description: "Produtos de acabamento",
+        amountCents: 9600,
+        dueDayOffset: 13,
+        paymentMethod: "card",
+      },
     ],
     pending: {
       productKey: "corte-barba",
@@ -593,6 +875,17 @@ export const SEGMENTS: Record<SegmentId, SegmentProfile> = {
         minStock: 3,
         costCents: 1500,
         priceCents: 4000,
+        trackStock: true,
+      },
+      {
+        key: "jaqueta",
+        name: "Jaqueta jeans",
+        unit: "un",
+        unitPlural: "un",
+        stock: 6,
+        minStock: 2,
+        costCents: 7000,
+        priceCents: 16000,
         trackStock: true,
       },
     ],
@@ -722,6 +1015,137 @@ export const SEGMENTS: Record<SegmentId, SegmentProfile> = {
         dayOffset: 2,
         hour: 17,
         minute: 10,
+      },
+      {
+        key: "retirada-1",
+        kind: "withdrawal",
+        description: "Retirada para casa",
+        amountCents: 20000,
+        paymentMethod: "pix",
+        dayOffset: 2,
+        hour: 18,
+        minute: 0,
+      },
+      {
+        key: "retirada-2",
+        kind: "withdrawal",
+        description: "Retirada para casa",
+        amountCents: 10000,
+        paymentMethod: "cash",
+        dayOffset: 9,
+        hour: 18,
+        minute: 15,
+      },
+    ],
+    suppliers: [
+      {
+        key: "aurora",
+        name: "Confecção Aurora",
+        phone: "(11) 98220-1144",
+        email: "pedidos@confeccaoaurora.com.br",
+        notes: "Camisetas e calças. Entrega em 7 dias.",
+      },
+      {
+        key: "atacadao-moda",
+        name: "Atacadão da Moda",
+        phone: "(11) 97115-6633",
+        email: "vendas@atacadaodamoda.com.br",
+        notes: "Reposição rápida, preço melhor em volume.",
+      },
+      {
+        key: "couros",
+        name: "Couros & Cia",
+        phone: "(11) 96008-5521",
+        email: "contato@couros.com.br",
+        notes: "Bolsas e acessórios de couro.",
+      },
+    ],
+    purchases: [
+      {
+        key: "camiseta-aurora",
+        supplierKey: "aurora",
+        productKey: "camiseta",
+        quantity: 20,
+        unitCostCents: 2200,
+        dayOffset: 21,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "camiseta-atacadao",
+        supplierKey: "atacadao-moda",
+        productKey: "camiseta",
+        quantity: 20,
+        unitCostCents: 2400,
+        dayOffset: 7,
+        paid: true,
+        paymentMethod: "card",
+      },
+      {
+        key: "calca-aurora",
+        supplierKey: "aurora",
+        productKey: "calca-jeans",
+        quantity: 10,
+        unitCostCents: 5200,
+        dayOffset: 18,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "calca-atacadao",
+        supplierKey: "atacadao-moda",
+        productKey: "calca-jeans",
+        quantity: 10,
+        unitCostCents: 5000,
+        dayOffset: 6,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "bolsa-couros",
+        supplierKey: "couros",
+        productKey: "bolsa",
+        quantity: 5,
+        unitCostCents: 8000,
+        dayOffset: 12,
+        paid: true,
+        paymentMethod: "pix",
+      },
+      {
+        key: "bolsa-atacadao",
+        supplierKey: "atacadao-moda",
+        productKey: "bolsa",
+        quantity: 5,
+        unitCostCents: 7500,
+        dayOffset: 3,
+        paid: true,
+        paymentMethod: "pix",
+      },
+    ],
+    bills: [
+      {
+        key: "aurora",
+        supplierKey: "aurora",
+        description: "Camisetas e calças",
+        amountCents: 62000,
+        dueDayOffset: 5,
+        paymentMethod: "pix",
+      },
+      {
+        key: "atacadao",
+        supplierKey: "atacadao-moda",
+        description: "Reposição da coleção",
+        amountCents: 48000,
+        dueDayOffset: 11,
+        paymentMethod: "pix",
+      },
+      {
+        key: "couros",
+        supplierKey: "couros",
+        description: "Bolsas de couro",
+        amountCents: 37500,
+        dueDayOffset: -4,
+        paymentMethod: "card",
       },
     ],
     pending: {
