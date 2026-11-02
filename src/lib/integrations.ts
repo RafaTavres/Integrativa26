@@ -16,7 +16,8 @@ export interface WhatsAppPreferences {
   updatedAt?: string;
 }
 
-export const WHATSAPP_PREFERENCES_KEY = "meu-caixa:whatsapp:v1";
+export const WHATSAPP_PREFERENCES_KEY = "estokar:whatsapp:v1";
+const LEGACY_WHATSAPP_PREFERENCES_KEY = "meu-caixa:whatsapp:v1";
 
 export const WHATSAPP_STATUS = {
   state: "not_connected" as const,
@@ -79,13 +80,17 @@ export function loadWhatsAppPreferences(): WhatsAppPreferences {
   if (typeof window === "undefined") return WHATSAPP_DEFAULT_PREFERENCES;
 
   try {
-    const raw = window.localStorage.getItem(WHATSAPP_PREFERENCES_KEY);
+    const current = window.localStorage.getItem(WHATSAPP_PREFERENCES_KEY);
+    const legacy = current
+      ? null
+      : window.localStorage.getItem(LEGACY_WHATSAPP_PREFERENCES_KEY);
+    const raw = current ?? legacy;
     if (!raw) return WHATSAPP_DEFAULT_PREFERENCES;
     const parsed = JSON.parse(raw) as Partial<WhatsAppPreferences> | null;
     if (!parsed || typeof parsed !== "object") {
       return WHATSAPP_DEFAULT_PREFERENCES;
     }
-    return {
+    const preferences: WhatsAppPreferences = {
       phone:
         typeof parsed.phone === "string"
           ? formatPhoneInput(parsed.phone)
@@ -98,6 +103,16 @@ export function loadWhatsAppPreferences(): WhatsAppPreferences {
       updatedAt:
         typeof parsed.updatedAt === "string" ? parsed.updatedAt : undefined,
     };
+
+    if (!current && legacy) {
+      window.localStorage.setItem(
+        WHATSAPP_PREFERENCES_KEY,
+        JSON.stringify(preferences),
+      );
+      window.localStorage.removeItem(LEGACY_WHATSAPP_PREFERENCES_KEY);
+    }
+
+    return preferences;
   } catch {
     return WHATSAPP_DEFAULT_PREFERENCES;
   }

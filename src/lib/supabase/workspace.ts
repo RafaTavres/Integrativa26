@@ -1297,6 +1297,7 @@ export async function createPendingSale(
     productName: string;
     quantity: number;
     amountCents: number;
+    paymentMethod?: PaymentMethod;
     sourceType: SourceType;
     rawInput?: string;
     aiConfidence?: number;
@@ -1311,6 +1312,7 @@ export async function createPendingSale(
       amount_cents: input.amountCents,
       quantity: input.quantity,
       product_id: input.productId,
+      payment_method: input.paymentMethod ?? null,
       source_type: input.sourceType,
       status: "pending_review",
       raw_input: input.rawInput ?? null,

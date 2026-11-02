@@ -44,7 +44,7 @@ function downloadTemplate() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = "meu-caixa-modelo.csv";
+  anchor.download = "estokar-modelo.csv";
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -351,7 +351,7 @@ export function ImportView() {
           <div className="rounded-[4px] border border-line bg-paper p-4">
             <p className="text-sm font-bold text-ink">Modelo pronto</p>
             <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted">
-              Baixe o CSV com as colunas que o Meu Caixa entende. Funciona no
+              Baixe o CSV com as colunas que o Estokar entende. Funciona no
               Excel, Google Sheets e Numbers.
             </p>
             <button

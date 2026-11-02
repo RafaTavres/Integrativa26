@@ -55,8 +55,13 @@ import type {
   Transaction,
 } from "./types";
 
-const STORAGE_KEY = "meu-caixa:demo:v3";
-const LEGACY_STORAGE_KEYS = ["meu-caixa:demo:v2", "meu-caixa:demo:v1"];
+const STORAGE_KEY = "estokar:demo:v3";
+// Chaves do nome antigo, migradas na primeira leitura.
+const LEGACY_STORAGE_KEYS = [
+  "meu-caixa:demo:v3",
+  "meu-caixa:demo:v2",
+  "meu-caixa:demo:v1",
+];
 
 interface SaleInput {
   productId: string;
@@ -85,6 +90,16 @@ interface StockInput {
 
 interface ReviewInput extends SaleInput {
   transactionId: string;
+}
+
+/** Rascunho criado a partir de um áudio gravado no próprio navegador. */
+interface AudioDraftInput {
+  productId: string;
+  quantity: number;
+  amountCents: number;
+  paymentMethod?: PaymentMethod;
+  transcript: string;
+  aiConfidence?: number;
 }
 
 interface SupplierInput {
@@ -182,6 +197,7 @@ interface AppContextValue {
   importRows: (rows: ImportRow[]) => Promise<ImportSummary>;
   setSegment: (segmentId: SegmentId) => Promise<void>;
   resetDemo: () => Promise<void>;
+  createAudioDraft: (input: AudioDraftInput) => Promise<Transaction>;
   simulatePending: () => Promise<Transaction | null>;
 }
 
@@ -293,12 +309,22 @@ function readStoredState(): DemoState | null {
       }
     }
 
-    // A v2 guardava só produtos, lançamentos e estoque. Migramos mantendo o
-    // que a pessoa já tinha e completando fornecedores/compras/contas.
     for (const key of LEGACY_STORAGE_KEYS) {
       const legacy = window.localStorage.getItem(key);
       if (!legacy) continue;
       const parsed: unknown = JSON.parse(legacy);
+
+      // v3 do nome antigo: só muda a chave, o conteúdo continua igual.
+      if (isDemoState(parsed)) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        for (const legacyKey of LEGACY_STORAGE_KEYS) {
+          window.localStorage.removeItem(legacyKey);
+        }
+        return parsed;
+      }
+
+      // A v2 guardava só produtos, lançamentos e estoque. Migramos mantendo o
+      // que a pessoa já tinha e completando fornecedores/compras/contas.
       if (isLegacyState(parsed)) {
         const migrated = migrateLegacyState(parsed);
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
@@ -1600,6 +1626,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [state.segmentId]);
 
+  const createAudioDraft = useCallback(
+    async (input: AudioDraftInput): Promise<Transaction> => {
+      const product = state.products.find(
+        (item) => item.id === input.productId,
+      );
+      if (!product) throw new Error("Escolha o item que você vendeu.");
+      if (input.quantity < 1) throw new Error("Informe a quantidade.");
+      if (product.trackStock && input.quantity > product.stock) {
+        throw new Error("Essa quantidade não está disponível no estoque.");
+      }
+      if (input.amountCents < 1) throw new Error("Informe um valor válido.");
+
+      const rawInput =
+        input.transcript.trim() ||
+        "Áudio gravado no navegador sem transcrição automática.";
+
+      const active = cloudRef.current;
+      if (active) {
+        const transactionId = await createPendingSale(
+          active.client,
+          active.businessId,
+          {
+            productId: product.id,
+            productName: product.name,
+            quantity: input.quantity,
+            amountCents: input.amountCents,
+            paymentMethod: input.paymentMethod,
+            sourceType: "audio_transcription",
+            rawInput,
+            aiConfidence: input.aiConfidence,
+          },
+        );
+        const workspace = await refresh();
+        const created = workspace?.state.transactions.find(
+          (transaction) => transaction.id === transactionId,
+        );
+        if (!created) {
+          throw new Error(
+            "O rascunho foi criado, mas não conseguimos carregá-lo agora.",
+          );
+        }
+        return created;
+      }
+
+      const now = new Date().toISOString();
+      const transaction: Transaction = {
+        id: uid("tx"),
+        kind: "sale",
+        description: product.name,
+        productId: product.id,
+        quantity: input.quantity,
+        amountCents: input.amountCents,
+        paymentMethod: input.paymentMethod,
+        sourceType: "audio_transcription",
+        status: "pending_review",
+        aiConfidence: input.aiConfidence,
+        rawInput,
+        occurredAt: now,
+        createdAt: now,
+      };
+      setState((previous) => ({
+        ...previous,
+        transactions: [transaction, ...previous.transactions],
+      }));
+      return transaction;
+    },
+    [refresh, state.products],
+  );
+
   const simulatePending = useCallback(async (): Promise<Transaction | null> => {
     const segment = SEGMENTS[state.segmentId];
     const preferredId = `${state.segmentId}-${segment.pending.productKey}`;
@@ -1618,50 +1713,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? segment.pending.amountCents
         : product.priceCents * quantity;
 
-    const active = cloudRef.current;
-    if (active) {
-      const transactionId = await createPendingSale(
-        active.client,
-        active.businessId,
-        {
-          productId: product.id,
-          productName: product.name,
-          quantity,
-          amountCents,
-          sourceType: "audio_transcription",
-          rawInput: segment.pending.rawInput,
-          aiConfidence: segment.pending.aiConfidence,
-        },
-      );
-      const workspace = await refresh();
-      return (
-        workspace?.state.transactions.find(
-          (transaction) => transaction.id === transactionId,
-        ) ?? null
-      );
-    }
-
-    const now = new Date().toISOString();
-    const transaction: Transaction = {
-      id: uid("tx"),
-      kind: "sale",
-      description: product.name,
+    return createAudioDraft({
       productId: product.id,
       quantity,
       amountCents,
-      sourceType: "audio_transcription",
-      status: "pending_review",
+      transcript: segment.pending.rawInput,
       aiConfidence: segment.pending.aiConfidence,
-      rawInput: segment.pending.rawInput,
-      occurredAt: now,
-      createdAt: now,
-    };
-    setState((previous) => ({
-      ...previous,
-      transactions: [transaction, ...previous.transactions],
-    }));
-    return transaction;
-  }, [refresh, state.products, state.segmentId]);
+    });
+  }, [createAudioDraft, state.products, state.segmentId]);
 
   const pendingTransactions = useMemo(
     () =>
@@ -1779,6 +1838,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       importRows,
       setSegment,
       resetDemo,
+      createAudioDraft,
       simulatePending,
     }),
     [
@@ -1817,6 +1877,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       importRows,
       setSegment,
       resetDemo,
+      createAudioDraft,
       simulatePending,
     ],
   );

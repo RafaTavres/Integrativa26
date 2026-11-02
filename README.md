@@ -1,4 +1,4 @@
-# Meu Caixa
+# Estokar
 
 > Gestor Inteligente de Pequenos Negócios — gestão sem planilha, sem termo difícil e sem fricção.
 
@@ -24,14 +24,14 @@ Deploy: guia completo em [`DEPLOY.md`](DEPLOY.md) (Vercel, Docker/VPS, Render e 
 | Ícones | **lucide-react** | Ícones leves, consistentes e com bom traço para botões grandes. |
 | Fontes | **Figtree Variable + Fraunces Variable** (local via Fontsource) | Figtree dá clareza no corpo e nos números; Fraunces traz o aconchego artesanal da marca. Sem dependência de CDN. |
 | Persistência | **Supabase Postgres** com **login anônimo** | Cada navegador ganha uma sessão própria (sem senha) e os dados ficam no banco, com RLS por negócio. |
-| Fallback | **localStorage** (`meu-caixa:demo:v3`) | Se o Supabase não estiver configurado ou a conexão cair, o app continua funcionando neste navegador. A v2 é migrada automaticamente. |
+| Fallback | **localStorage** (`estokar:demo:v3`) | Se o Supabase não estiver configurado ou a conexão cair, o app continua funcionando neste navegador. As chaves antigas `meu-caixa:*` são migradas automaticamente. |
 | Backend | **Next.js Route Handlers** (`/api/config`, `/api/health`, `/api/integrations`) | Configuração em runtime, health check e contrato público para os conectores de entrada. |
 | Planilhas | **Parser próprio + `fflate`** | CSV/TSV são lidos no navegador; XLSX é descompactado e interpretado sem planilha externa pesada. |
 | IA futura | **Whisper + Vision + fila/Edge Functions** | Transcrição de áudio, leitura de comprovantes/fotos e importação de WhatsApp sem acoplar a IA ao front-end. |
 
 ### Por que login anônimo?
 
-O público do app não quer criar conta para registrar uma venda. O login anônimo do Supabase dá um `auth.users` real (com RLS e `memberships`) sem pedir e-mail nem senha, e o mesmo código aceita e-mail/telefone no futuro. A sessão fica em `meu-caixa:auth` no navegador — por isso, hoje, ela não sincroniza entre aparelhos.
+O público do app não quer criar conta para registrar uma venda. O login anônimo do Supabase dá um `auth.users` real (com RLS e `memberships`) sem pedir e-mail nem senha, e o mesmo código aceita e-mail/telefone no futuro. A sessão fica em `estokar:auth` no navegador — por isso, hoje, ela não sincroniza entre aparelhos. A sessão criada antes da troca de nome é preservada.
 
 As credenciais usadas no navegador são apenas a URL do projeto e a chave **publishable/anon**. A chave `service_role`/`sb_secret_` é rejeitada em `src/lib/supabase/config.ts`, porque ela ignora o RLS.
 
@@ -124,13 +124,13 @@ Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md
 - **Fornecedores** — cadastro com telefone, e-mail e observações. A tela de cada fornecedor reúne o que falta pagar, o histórico de compras, os itens comprados e o preço praticado.
 - **Compra de mercadoria** — escolhe fornecedor, item, quantidade e custo unitário. Se for item novo, ele entra no estoque; se existir, o custo é recalculado pela média ponderada. A compra pode ser paga na hora (sai do caixa) ou ficar para pagar (vira conta a pagar).
 - **Compra pela nota** — no detalhe do fornecedor, o botão **Registrar compra pela nota** abre a compra já vinculada a ele, com foto opcional do cupom. Ao cadastrar um fornecedor novo, **Salvar e registrar nota** faz o mesmo em um passo. Com foto, o lançamento fica com `source_type = image_recognition`; sem foto, continua `manual`. A imagem ainda não é enviada ao servidor.
-- **Integrações** — a rota `/integracoes` mostra o WhatsApp como **não conectado**, com todas as letras, e permite salvar o número e as regras de entrada neste navegador (`meu-caixa:whatsapp:v1`). Também lista o que já funciona (planilha, foto, áudio) e o que está em preparação (e-mail/XML, QR Code). Nenhuma conexão é simulada.
+- **Integrações** — a rota `/integracoes` mostra o WhatsApp como **não conectado**, com todas as letras, e permite salvar o número e as regras de entrada neste navegador (`estokar:whatsapp:v1`). Também lista o que já funciona (planilha, foto, áudio) e o que está em preparação (e-mail/XML, QR Code). Nenhuma conexão é simulada.
 - **Contas a pagar** — criadas por compra a prazo ou manualmente. O caixa **só muda no dia do pagamento**. A previsão agrupa vencidas, próximos 7 dias e “mais para frente”.
 - **Retirada** — dinheiro que você tira do caixa para uso pessoal. Entra em “Saiu” e no extrato com o rótulo **retirada**, mas não é despesa do negócio nem conta a pagar.
 - **Importar planilha** — CSV, TSV ou XLSX com vendas, gastos, compras, contas e retiradas. Mostra prévia, valida linha por linha e não mexe no estoque atual. As compras importadas alimentam o histórico de preços por fornecedor.
 - **Análises** — previsão de pagamento, comparação de preço do mesmo item entre fornecedores, itens encalhados com o valor parado e resumo de retiradas.
 - **Foto da nota** — anexa cupom/comprovante, escolhe se é venda ou compra, confirma produto, valor e pagamento, e salva com `source_type = image_recognition`. O preview fica só no navegador: nesta versão o arquivo não é enviado ao servidor.
-- **Áudio** — cria um rascunho `pending_review` com `source_type = audio_transcription` para conferência na home.
+- **Áudio** — grava de verdade pelo microfone do navegador (`MediaRecorder`), transcreve em português com a Web Speech API quando disponível e permite corrigir o texto. O rascunho nasce como `pending_review` com `source_type = audio_transcription`; o áudio fica só na memória da página e não é enviado ao servidor.
 - **Entrada rápida de estoque** — produto, quantidade e custo. Continua disponível para repor um item sem passar pela compra completa.
 - **Radar de estoque** — produtos no mínimo ou zerados aparecem no topo do extrato e na página de estoque/produtos, com ação direta para repor.
 - **Conferência de IA** — card de rascunho com os dados pré-preenchidos. Nada entra no caixa até a confirmação. É possível confirmar ou descartar.
@@ -153,11 +153,11 @@ Cada cenário também traz fornecedores com histórico de compras, contas em abe
 
 Na barbearia, **Corte**, **Barba** e **Corte + barba** são serviços: aparecem na venda e no catálogo, mas não baixam estoque. **Pomada** e **Shampoo** são produtos controlados.
 
-Para voltar ao estado inicial: menu **Sua loja** → **Restaurar exemplo**. No modo nuvem isso recria o cenário do ramo no Supabase; no modo local, limpa o `localStorage`. A preparação do WhatsApp é independente e continua salva; para apagá-la também, remova `meu-caixa:whatsapp:v1`.
+Para voltar ao estado inicial: menu **Sua loja** → **Restaurar exemplo**. No modo nuvem isso recria o cenário do ramo no Supabase; no modo local, limpa o `localStorage`. A preparação do WhatsApp é independente e continua salva; para apagá-la também, remova `estokar:whatsapp:v1`.
 
 ```js
-localStorage.removeItem("meu-caixa:demo:v3");
-localStorage.removeItem("meu-caixa:whatsapp:v1");
+localStorage.removeItem("estokar:demo:v3");
+localStorage.removeItem("estokar:whatsapp:v1");
 location.reload();
 ```
 
@@ -215,6 +215,7 @@ src/
     action-provider.tsx     # estado global dos sheets
     sheet.tsx               # bottom sheet mobile / modal central no desktop
     register-sheet.tsx      # hub: venda, gasto, compra, retirada, foto, áudio
+    audio-sheet.tsx         # gravação real, transcrição, revisão e rascunho
     receipt-sheet.tsx       # foto da nota → venda ou compra
     sale-sheet.tsx          # venda + confirmação de pendente + sucesso
     expense-sheet.tsx
@@ -235,6 +236,8 @@ src/
     import.ts               # parser CSV/TSV/XLSX, modelo e validação
     ingestion.ts            # contrato e normalização de entradas externas
     integrations.ts         # preferências locais do WhatsApp e exemplos
+    audio.ts                # interpreta a transcrição (item, quantidade, valor, pagamento)
+    speech.ts               # tipos e detecção da Web Speech API
     format.ts               # moeda, datas e saudação
     cn.ts
     supabase/
@@ -251,7 +254,7 @@ supabase/
 2. `src/components/home-view.tsx` monta o grid de duas colunas no desktop e a pilha no celular.
 3. `src/components/balance-card.tsx` mostra **Sobrou no caixa**, **Entrou hoje** e **Saiu hoje**.
 4. `src/components/quick-actions.tsx` abre o hub **Registrar** e mantém os atalhos de gasto e estoque.
-5. `src/components/register-sheet.tsx` é o hub; cada opção abre uma sheet específica (`sale-sheet.tsx`, `expense-sheet.tsx`, `purchase-sheet.tsx`, `withdrawal-sheet.tsx`, `receipt-sheet.tsx`) ou cria um rascunho de áudio.
+5. `src/components/register-sheet.tsx` é o hub; cada opção abre uma sheet específica (`sale-sheet.tsx`, `expense-sheet.tsx`, `purchase-sheet.tsx`, `withdrawal-sheet.tsx`, `receipt-sheet.tsx`) ou a gravação real (`audio-sheet.tsx`).
 6. `src/components/payables-card.tsx` e `insights-card.tsx` resumem contas e dinheiro parado na home.
 7. `src/components/pending-review-card.tsx` aparece só quando há rascunho de IA.
 8. `src/components/activity-feed.tsx` junta alertas de estoque, grupos por dia e o botão “Ver mais”.
@@ -401,7 +404,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 
 ### Integrações futuras
 
-- **Áudio**: gravar no bucket privado `ingestion`, transcrever com Whisper e extrair produto/quantidade/valor/pagamento.
+- **Áudio**: guardar a gravação no bucket privado `ingestion`, transcrever com Whisper no servidor e extrair produto/quantidade/valor/pagamento com um modelo mais robusto que o parser atual do navegador.
 - **Foto**: Vision para ler cupom, comanda ou comprovante; `extracted_payload` guarda o JSON bruto.
 - **WhatsApp**: webhook recebe a mensagem, cria um `ingestion_event` com `whatsapp_import` e segue o mesmo pipeline.
 - **E-mail/XML**: conector server-side grava a NF-e em `ingestion_events` com `email_import`; o parser reaproveita o mesmo envelope.
@@ -420,7 +423,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - Fornecedores, compras, contas a pagar, retiradas, análises e importação de CSV/TSV/XLSX funcionando nos dois modos.
 - Compra pela nota no detalhe do fornecedor, com foto opcional e vínculo com o fornecedor; a origem `image_recognition` é gravada no lançamento.
 - Tela `/integracoes` com o WhatsApp em estado **não conectado**, preparação local do número e regras, e a lista real dos demais canais.
-- Sem upload real de áudio/foto no servidor: a foto é lida no navegador (preview) e o lançamento é salvo com `source_type = image_recognition`; o áudio é simulado com um rascunho de exemplo.
+- O áudio é gravado e transcrito no navegador, e o rascunho é real; nada é enviado ao servidor e a transcrição depende da Web Speech API (indisponível no Firefox e dependente de rede no Chrome). A foto também fica só no navegador (preview) e o lançamento é salvo com `source_type = image_recognition`.
 - Os três ramos usam dados fictícios e trocam o cenário inteiro ao serem selecionados.
 - Sem multiusuário: uma sessão anônima = um negócio. Sair do navegador ou limpar os dados perde a sessão.
 

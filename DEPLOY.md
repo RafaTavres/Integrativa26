@@ -1,8 +1,8 @@
-# Deploy — Meu Caixa
+# Deploy — Estokar
 
 Guia para colocar o app no ar fora da sua máquina. São duas variáveis de ambiente e uma imagem Docker (ou um projeto na Vercel).
 
-O app é **Next.js + Supabase**. Não existe backend próprio além de duas rotas leves:
+O app é **Next.js + Supabase**. Não existe backend próprio além de três rotas leves:
 
 | Rota | Papel |
 | --- | --- |
@@ -12,7 +12,7 @@ O app é **Next.js + Supabase**. Não existe backend próprio além de duas rota
 
 Como a configuração é lida a cada requisição, **trocar de projeto Supabase não exige rebuild**.
 
-A tela `/integracoes` é servida pelo próprio app e não tem configuração de servidor nesta versão: ela mostra o WhatsApp como **não conectado** e guarda apenas o número e as preferências no `localStorage` do navegador (`meu-caixa:whatsapp:v1`). Nenhuma credencial de WhatsApp existe hoje no projeto.
+A tela `/integracoes` é servida pelo próprio app e não tem configuração de servidor nesta versão: ela mostra o WhatsApp como **não conectado** e guarda apenas o número e as preferências no `localStorage` do navegador (`estokar:whatsapp:v1`). Nenhuma credencial de WhatsApp existe hoje no projeto.
 
 ---
 
@@ -22,7 +22,7 @@ A tela `/integracoes` é servida pelo próprio app e não tem configuração de 
 2. Abra **SQL Editor** e rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Ele cria tabelas, enums, RLS, a view `daily_totals` e as RPCs. O script é idempotente: pode ser rodado de novo para aplicar as tabelas de **fornecedores, compras e contas a pagar** em um projeto que já existia.
 3. Ative o login anônimo em **Authentication → Sign In / Providers → Anonymous sign-ins**.
 4. Em **Authentication → URL Configuration**, defina:
-   - **Site URL**: o endereço final do app (ex.: `https://caixa.seudominio.com`).
+   - **Site URL**: o endereço final do app (ex.: `https://estokar.seudominio.com`).
    - **Redirect URLs**: o mesmo endereço com `/**`.
 5. Em **Project Settings → API**, copie:
    - **Project URL** → `SUPABASE_URL`
@@ -137,7 +137,7 @@ sudo nano /etc/caddy/Caddyfile
 Conteúdo:
 
 ```caddyfile
-caixa.seudominio.com {
+estokar.seudominio.com {
     reverse_proxy 127.0.0.1:3000
 }
 ```
@@ -165,7 +165,7 @@ cd Integrativa26
 git pull
 
 # guarda a imagem atual para rollback
-docker tag meu-caixa:latest meu-caixa:backup
+docker tag estokar:latest estokar:backup
 
 # se o schema mudou (novas tabelas/colunas), rode de novo no SQL Editor:
 # supabase/schema.sql
@@ -177,7 +177,7 @@ curl http://127.0.0.1:3000/api/health
 Rollback:
 
 ```bash
-docker tag meu-caixa:backup meu-caixa:latest
+docker tag estokar:backup estokar:latest
 docker compose up -d --force-recreate web
 ```
 
@@ -261,7 +261,7 @@ A preparação do WhatsApp feita em `/integracoes` **não usa variável de ambie
 
 ### Sessão anônima
 
-Cada navegador cria uma sessão anônima própria (`meu-caixa:auth` no `localStorage`) e enxerga apenas o negócio dela. Consequências:
+Cada navegador cria uma sessão anônima própria (`estokar:auth` no `localStorage`) e enxerga apenas o negócio dela. A sessão criada com o nome antigo (`meu-caixa:auth`) é migrada automaticamente. Consequências:
 
 - Limpar os dados do navegador **perde o acesso** ao caixa (os dados continuam no banco, mas sem usuário para acessá-los).
 - Não há sincronização entre celular e computador.
@@ -269,7 +269,11 @@ Cada navegador cria uma sessão anônima própria (`meu-caixa:auth` no `localSto
 
 ### Preparação do WhatsApp
 
-O número e as preferências salvos em `/integracoes` ficam só no `localStorage` do navegador, na chave `meu-caixa:whatsapp:v1`. Eles não entram no backup do Supabase, não sincronizam entre aparelhos e não conectam o WhatsApp. **Restaurar exemplo** não apaga essa preparação; para removê-la, limpe a chave ou os dados do navegador.
+O número e as preferências salvos em `/integracoes` ficam só no `localStorage` do navegador, na chave `estokar:whatsapp:v1`. Eles não entram no backup do Supabase, não sincronizam entre aparelhos e não conectam o WhatsApp. **Restaurar exemplo** não apaga essa preparação; para removê-la, limpe a chave ou os dados do navegador.
+
+### Áudio
+
+A gravação usa `MediaRecorder` e a transcrição usa a Web Speech API do navegador. Por isso o app precisa estar em **HTTPS** (ou `localhost`) para o microfone funcionar. Chrome/Edge transcrevem em português; Firefox pode gravar, mas não transcrever. O áudio fica só na memória da página e não é enviado nem armazenado no servidor.
 
 ### Dados de exemplo
 

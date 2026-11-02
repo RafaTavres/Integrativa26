@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDownLeft,
@@ -16,7 +15,6 @@ import {
 import { Sheet } from "./sheet";
 import { useApp } from "@/lib/store";
 import { useActions } from "./action-provider";
-import { useToast } from "./toast";
 import { cn } from "@/lib/cn";
 
 interface RegisterSheetProps {
@@ -69,41 +67,16 @@ function Option({ icon: Icon, label, hint, onClick, tone, disabled }: OptionProp
 }
 
 export function RegisterSheet({ onClose }: RegisterSheetProps) {
-  const { segment, simulatePending } = useApp();
+  const { segment } = useApp();
   const {
     openSale,
     openExpense,
     openReceipt,
     openPurchase,
     openWithdrawal,
+    openAudio,
   } = useActions();
-  const { toast } = useToast();
   const router = useRouter();
-  const [sendingAudio, setSendingAudio] = useState(false);
-
-  async function handleAudio() {
-    if (sendingAudio) return;
-    setSendingAudio(true);
-    try {
-      const pending = await simulatePending();
-      if (!pending) {
-        toast("Cadastre um item com estoque primeiro.", "info");
-        return;
-      }
-      onClose();
-      router.push("/");
-      toast("Áudio recebido. Confira na tela inicial.", "info");
-    } catch (error) {
-      toast(
-        error instanceof Error
-          ? error.message
-          : "Não conseguimos registrar o áudio.",
-        "info",
-      );
-    } finally {
-      setSendingAudio(false);
-    }
-  }
 
   function openImport() {
     onClose();
@@ -161,10 +134,9 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
           <Option
             tone="sand"
             icon={Mic}
-            label={sendingAudio ? "Ouvindo…" : "Áudio"}
-            hint="Conte o que vendeu ou comprou"
-            onClick={() => void handleAudio()}
-            disabled={sendingAudio}
+            label="Áudio"
+            hint="Fale o que você vendeu"
+            onClick={openAudio}
           />
         </div>
 
@@ -214,8 +186,8 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
           </p>
           <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ink/80">
             Digitar e fotografar já salvam na hora. Compra a prazo cria a conta
-            a pagar sem tirar dinheiro do caixa. Áudio entra como rascunho para
-            você conferir antes de confirmar. O WhatsApp ainda não está
+            a pagar sem tirar dinheiro do caixa. No áudio, você grava e confere
+            a transcrição antes de confirmar. O WhatsApp ainda não está
             conectado — a tela de integrações só prepara o número.
           </p>
         </div>

@@ -102,7 +102,7 @@ const STEPS = [
     detail: "O número preparado recebe texto, foto ou áudio pelo conector.",
   },
   {
-    title: "O Meu Caixa organiza",
+    title: "O Estokar organiza",
     detail: "A mensagem vira um evento com valor, item, fornecedor e data.",
   },
   {
@@ -265,7 +265,7 @@ export function IntegrationsView() {
               <ChannelRow
                 icon={Camera}
                 title="Foto e áudio"
-                detail="Registre pelo hub Registrar. A foto ainda não passa por OCR."
+                detail="Grave áudio e transcreva no navegador. A foto ainda não passa por OCR."
                 status="Disponível"
                 tone="sage"
                 href="/"

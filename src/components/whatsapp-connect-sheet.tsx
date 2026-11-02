@@ -288,7 +288,7 @@ export function WhatsAppConnectSheet({
               Vendi 2 bolos de cenoura por R$ 100 no pix.
             </p>
             <p className="w-fit max-w-[90%] rounded-[4px] rounded-bl-none bg-cream px-2.5 py-1.5 text-[0.6875rem] leading-snug text-muted">
-              Anotado. Confira e confirme no Meu Caixa.
+              Anotado. Confira e confirme no Estokar.
             </p>
           </div>
         </div>

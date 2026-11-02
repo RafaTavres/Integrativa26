@@ -22,10 +22,12 @@ import { PurchaseSheet } from "./purchase-sheet";
 import { WithdrawalSheet } from "./withdrawal-sheet";
 import { BillSheet } from "./bill-sheet";
 import { BillPaySheet } from "./bill-pay-sheet";
+import { AudioSheet } from "./audio-sheet";
 
 type SheetState =
   | { type: "none" }
   | { type: "register" }
+  | { type: "audio" }
   | { type: "receipt" }
   | { type: "sale"; pendingId?: string }
   | { type: "expense" }
@@ -49,6 +51,7 @@ interface PurchaseOptions {
 
 interface ActionsContextValue {
   openRegister: () => void;
+  openAudio: () => void;
   openReceipt: () => void;
   openSale: () => void;
   openExpense: () => void;
@@ -73,6 +76,7 @@ export function ActionProvider({ children }: { children: ReactNode }) {
 
   const close = useCallback(() => setSheet({ type: "none" }), []);
   const openRegister = useCallback(() => setSheet({ type: "register" }), []);
+  const openAudio = useCallback(() => setSheet({ type: "audio" }), []);
   const openReceipt = useCallback(() => setSheet({ type: "receipt" }), []);
   const openSale = useCallback(() => setSheet({ type: "sale" }), []);
   const openExpense = useCallback(() => setSheet({ type: "expense" }), []);
@@ -127,6 +131,7 @@ export function ActionProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       openRegister,
+      openAudio,
       openReceipt,
       openSale,
       openExpense,
@@ -145,6 +150,7 @@ export function ActionProvider({ children }: { children: ReactNode }) {
     }),
     [
       openRegister,
+      openAudio,
       openReceipt,
       openSale,
       openExpense,
@@ -170,6 +176,7 @@ export function ActionProvider({ children }: { children: ReactNode }) {
       {sheet.type === "register" ? (
         <RegisterSheet onClose={close} />
       ) : null}
+      {sheet.type === "audio" ? <AudioSheet onClose={close} /> : null}
       {sheet.type === "receipt" ? <ReceiptSheet onClose={close} /> : null}
       {sheet.type === "sale" ? (
         <SaleSheet onClose={close} pendingId={sheet.pendingId} />

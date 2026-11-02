@@ -1,11 +1,11 @@
-name: meu-caixa
+name: estokar
 
 services:
   web:
     build:
       context: .
       dockerfile: Dockerfile
-    image: meu-caixa:latest
+    image: estokar:latest
     # No VPS com proxy reverso, use APP_BIND=127.0.0.1 para não expor a porta.
     ports:
       - "${APP_BIND:-0.0.0.0}:${APP_PORT:-3000}:3000"

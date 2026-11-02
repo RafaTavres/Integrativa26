@@ -33,4 +33,4 @@ jobs:
     needs: app
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t meu-caixa:ci .
+      - run: docker build -t estokar:ci .

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ----------------------------------------------------------------------------
-# Meu Caixa — imagem de produção
+# Estokar — imagem de produção
 # Next.js em modo standalone: só o servidor e os arquivos necessários.
 # ----------------------------------------------------------------------------
 FROM node:22-alpine AS base

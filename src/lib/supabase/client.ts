@@ -11,7 +11,26 @@ export interface SupabaseConfigResponse {
 let cachedClient: SupabaseClient | null = null;
 let cachedSignature: string | null = null;
 
+const AUTH_STORAGE_KEY = "estokar:auth";
+const LEGACY_AUTH_STORAGE_KEY = "meu-caixa:auth";
+
+/** Preserva a sessão anônima criada antes da troca de nome. */
+function migrateAuthStorage() {
+  if (typeof window === "undefined") return;
+  try {
+    const legacy = window.localStorage.getItem(LEGACY_AUTH_STORAGE_KEY);
+    if (!legacy) return;
+    if (!window.localStorage.getItem(AUTH_STORAGE_KEY)) {
+      window.localStorage.setItem(AUTH_STORAGE_KEY, legacy);
+    }
+    window.localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+  } catch {
+    // Modo privado ou storage indisponível: segue com uma sessão nova.
+  }
+}
+
 export function getSupabaseClient(config: SupabaseConfig): SupabaseClient {
+  migrateAuthStorage();
   const signature = `${config.url}\u0000${config.anonKey}`;
   if (!cachedClient || cachedSignature !== signature) {
     cachedClient = createClient(config.url, config.anonKey, {
@@ -19,10 +38,10 @@ export function getSupabaseClient(config: SupabaseConfig): SupabaseClient {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
-        storageKey: "meu-caixa:auth",
+        storageKey: AUTH_STORAGE_KEY,
       },
       global: {
-        headers: { "x-application-name": "meu-caixa" },
+        headers: { "x-application-name": "estokar" },
       },
     });
     cachedSignature = signature;

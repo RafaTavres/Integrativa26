@@ -1,5 +1,5 @@
 -- ============================================================================
--- Meu Caixa — schema base para Supabase / Postgres
+-- Estokar — schema base para Supabase / Postgres
 -- ============================================================================
 -- Como usar:
 --   1. Crie um projeto no Supabase.

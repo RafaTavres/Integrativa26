@@ -9,13 +9,13 @@ import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
   title: {
-    default: "Meu Caixa — gestão sem complicação",
-    template: "%s · Meu Caixa",
+    default: "Estokar — gestão sem complicação",
+    template: "%s · Estokar",
   },
   description:
     "O jeito mais rápido de registrar vendas, gastos e estoque no seu pequeno negócio. Fricção zero, direto no celular.",
-  applicationName: "Meu Caixa",
-  authors: [{ name: "Meu Caixa" }],
+  applicationName: "Estokar",
+  authors: [{ name: "Estokar" }],
   keywords: [
     "MEI",
     "gestão financeira",
