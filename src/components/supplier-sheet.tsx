@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Trash2, Undo2 } from "lucide-react";
+import { ArrowRight, Camera, Trash2, Undo2 } from "lucide-react";
 import { Sheet } from "./sheet";
 import { useApp } from "@/lib/store";
+import { useActions } from "./action-provider";
 import { useToast } from "./toast";
 
 interface SupplierSheetProps {
@@ -13,6 +14,7 @@ interface SupplierSheetProps {
 
 export function SupplierSheet({ supplierId, onClose }: SupplierSheetProps) {
   const { suppliers, addSupplier, updateSupplier, deleteSupplier } = useApp();
+  const { openPurchase } = useActions();
   const { toast } = useToast();
   const existing = supplierId
     ? suppliers.find((supplier) => supplier.id === supplierId)
@@ -30,8 +32,7 @@ export function SupplierSheet({ supplierId, onClose }: SupplierSheetProps) {
 
   const nameError = attempted && !name.trim() ? "Diga o nome do fornecedor." : null;
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function save(after?: "receipt") {
     setAttempted(true);
     setSubmitError(null);
     if (submitting || !name.trim()) return;
@@ -41,10 +42,18 @@ export function SupplierSheet({ supplierId, onClose }: SupplierSheetProps) {
       if (existing) {
         await updateSupplier(existing.id, { name, phone, email, notes });
         toast("Fornecedor atualizado.");
-      } else {
-        await addSupplier({ name, phone, email, notes });
-        toast("Fornecedor salvo.");
+        onClose();
+        return;
       }
+
+      const supplier = await addSupplier({ name, phone, email, notes });
+      if (after === "receipt") {
+        toast("Fornecedor salvo. Agora anexe a nota da compra.");
+        openPurchase({ supplierId: supplier.id, withReceipt: true });
+        return;
+      }
+
+      toast("Fornecedor salvo.");
       onClose();
     } catch (error) {
       setSubmitError(
@@ -52,6 +61,11 @@ export function SupplierSheet({ supplierId, onClose }: SupplierSheetProps) {
       );
       setSubmitting(false);
     }
+  }
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void save();
   }
 
   async function handleDelete() {
@@ -74,19 +88,32 @@ export function SupplierSheet({ supplierId, onClose }: SupplierSheetProps) {
   return (
     <Sheet
       title={existing ? "Editar fornecedor" : "Novo fornecedor"}
-      description="Com o fornecedor salvo, você compara preços e acompanha o que falta pagar."
+      description="Salve quem te vende. Se quiser, já registre a nota da primeira compra."
       onClose={onClose}
       footer={
-        <button
-          type="submit"
-          form="supplier-form"
-          disabled={submitting}
-          aria-busy={submitting || undefined}
-          className="btn btn-primary h-14 w-full text-base"
-        >
-          {submitting ? "Salvando…" : "Salvar"}
-          <ArrowRight className="size-5" strokeWidth={2.2} />
-        </button>
+        <div className="space-y-2">
+          <button
+            type="submit"
+            form="supplier-form"
+            disabled={submitting}
+            aria-busy={submitting || undefined}
+            className="btn btn-primary h-14 w-full text-base"
+          >
+            {submitting ? "Salvando…" : "Salvar"}
+            <ArrowRight className="size-5" strokeWidth={2.2} />
+          </button>
+          {!existing ? (
+            <button
+              type="button"
+              onClick={() => void save("receipt")}
+              disabled={submitting}
+              className="btn btn-secondary h-12 w-full text-sm"
+            >
+              <Camera className="size-4 text-terracotta-dark" strokeWidth={2} />
+              Salvar e registrar nota
+            </button>
+          ) : null}
+        </div>
       }
     >
       <form

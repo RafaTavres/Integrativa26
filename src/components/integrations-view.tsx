@@ -1,0 +1,394 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  ArrowRight,
+  Camera,
+  Check,
+  FileSpreadsheet,
+  Mail,
+  MessageCircle,
+  QrCode,
+  ShieldCheck,
+  Unplug,
+  type LucideIcon,
+} from "lucide-react";
+import { WhatsAppConnectSheet } from "./whatsapp-connect-sheet";
+import { cn } from "@/lib/cn";
+import {
+  WHATSAPP_DEFAULT_PREFERENCES,
+  WHATSAPP_EXAMPLES,
+  WHATSAPP_STATUS,
+  isValidPhone,
+  loadWhatsAppPreferences,
+  type WhatsAppPreferences,
+} from "@/lib/integrations";
+
+type BadgeTone = "sage" | "mustard" | "muted";
+
+const BADGE_TONES: Record<BadgeTone, string> = {
+  sage: "bg-sage-soft text-sage-dark",
+  mustard: "bg-mustard-soft text-mustard-dark",
+  muted: "bg-cream text-muted",
+};
+
+function StatusBadge({
+  tone,
+  children,
+}: {
+  tone: BadgeTone;
+  children: React.ReactNode;
+}) {
+  return <span className={cn("badge", BADGE_TONES[tone])}>{children}</span>;
+}
+
+interface ChannelRowProps {
+  icon: LucideIcon;
+  title: string;
+  detail: string;
+  status: string;
+  tone: BadgeTone;
+  href?: string;
+}
+
+function ChannelRow({
+  icon: Icon,
+  title,
+  detail,
+  status,
+  tone,
+  href,
+}: ChannelRowProps) {
+  const content = (
+    <>
+      <span className="grid size-9 flex-none place-items-center rounded-[4px] bg-cream text-ink">
+        <Icon className="size-4" strokeWidth={1.9} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[0.8125rem] font-bold text-ink">
+          {title}
+        </span>
+        <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted">
+          {detail}
+        </span>
+      </span>
+      <span className="flex flex-none items-center gap-2">
+        <StatusBadge tone={tone}>{status}</StatusBadge>
+        {href ? (
+          <ArrowRight className="size-3.5 text-muted" strokeWidth={2.2} />
+        ) : null}
+      </span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="flex items-center gap-3 py-2.5 transition-colors first:pt-0 last:pb-0 hover:opacity-80"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">{content}</div>;
+}
+
+const STEPS = [
+  {
+    title: "Você manda a mensagem",
+    detail: "O número preparado recebe texto, foto ou áudio pelo conector.",
+  },
+  {
+    title: "O Meu Caixa organiza",
+    detail: "A mensagem vira um evento com valor, item, fornecedor e data.",
+  },
+  {
+    title: "Você confere e confirma",
+    detail: "O rascunho aparece na tela inicial. Nada entra no caixa sem revisão.",
+  },
+];
+
+export function IntegrationsView() {
+  const [preferences, setPreferences] = useState<WhatsAppPreferences>(
+    WHATSAPP_DEFAULT_PREFERENCES,
+  );
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  useEffect(() => {
+    setPreferences(loadWhatsAppPreferences());
+  }, []);
+
+  const prepared = isValidPhone(preferences.phone);
+
+  return (
+    <div className="mx-auto w-full max-w-[1120px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-9">
+      <header className="animate-rise flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow">Entrada sem digitação</p>
+          <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
+            Integrações
+          </h1>
+          <p className="mt-2 max-w-[36rem] text-sm leading-relaxed text-muted">
+            Prepare o WhatsApp e veja o que já entra por foto, áudio, planilha e
+            nota fiscal — com o estado real de cada canal.
+          </p>
+        </div>
+        <Link href="/" className="btn btn-secondary h-11 px-4 text-sm">
+          Voltar ao caixa
+        </Link>
+      </header>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-[1.12fr_0.88fr]">
+        <div className="space-y-4">
+          <section className="animate-rise overflow-hidden rounded-[4px] border border-line bg-paper">
+            <div className="border-b border-line bg-cream p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="grid size-12 flex-none place-items-center rounded-[4px] bg-sage-soft text-sage-dark">
+                  <MessageCircle className="size-6" strokeWidth={1.8} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="display text-[1.45rem] leading-none text-ink">
+                      WhatsApp
+                    </h2>
+                    <StatusBadge tone="mustard">
+                      <Unplug className="size-3" strokeWidth={2.4} />
+                      {WHATSAPP_STATUS.label}
+                    </StatusBadge>
+                    {prepared ? (
+                      <StatusBadge tone="sage">Preparação salva</StatusBadge>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 max-w-[34rem] text-[0.8125rem] leading-relaxed text-muted">
+                    Receba vendas, gastos e compras por mensagem. A interface
+                    está pronta; a conexão real com o WhatsApp Business ainda
+                    não foi ativada.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 sm:p-5">
+              {prepared ? (
+                <div className="rounded-[4px] border border-line bg-cream p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
+                        Número preparado
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-ink tabular">
+                        {preferences.phone}
+                      </p>
+                    </div>
+                    <StatusBadge tone="muted">Ainda não verificado</StatusBadge>
+                  </div>
+                  <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted">
+                    {preferences.receiveSales ? "Vendas" : null}
+                    {preferences.receiveSales &&
+                    (preferences.receiveExpenses ||
+                      preferences.receivePurchases)
+                      ? " · "
+                      : null}
+                    {preferences.receiveExpenses ? "Gastos" : null}
+                    {preferences.receiveExpenses &&
+                    preferences.receivePurchases
+                      ? " · "
+                      : null}
+                    {preferences.receivePurchases ? "Compras" : null}
+                    {preferences.confirmBeforeSaving
+                      ? " · confirmação antes de salvar"
+                      : " · sem confirmação antes de salvar"}
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-[4px] border border-dashed border-sand-dark bg-cream p-3">
+                  <p className="text-[0.8125rem] font-bold text-ink">
+                    Ainda não configurado
+                  </p>
+                  <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted">
+                    Salve o número e escolha o que pode entrar. Isso não conecta
+                    o WhatsApp: apenas deixa a preparação pronta para quando o
+                    conector for ativado.
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setConnectOpen(true)}
+                  className="btn btn-primary h-11 text-sm"
+                >
+                  <MessageCircle className="size-4" strokeWidth={2.1} />
+                  {prepared ? "Revisar preparação" : "Preparar conexão"}
+                </button>
+                <div className="flex items-center justify-center gap-1.5 rounded-[4px] border border-line bg-paper px-3 text-center text-[0.6875rem] font-medium text-muted">
+                  <Unplug className="size-3.5 flex-none" strokeWidth={2.2} />
+                  Aguardando o conector
+                </div>
+              </div>
+
+              <p className="mt-3 flex items-start gap-1.5 text-[0.6875rem] leading-relaxed text-muted">
+                <ShieldCheck
+                  className="mt-0.5 size-3.5 flex-none text-sage-dark"
+                  strokeWidth={2}
+                />
+                Nada é simulado: esta tela não finge uma conexão bem-sucedida.
+                {prepared
+                  ? " O número fica salvo só neste navegador."
+                  : " O número ficará salvo só neste navegador."}
+              </p>
+            </div>
+          </section>
+
+          <section className="animate-rise rounded-[4px] border border-line bg-paper p-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-[0.8125rem] font-bold text-ink">
+                Outros canais
+              </h2>
+              <span className="text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-muted">
+                2 disponíveis
+              </span>
+            </div>
+            <div className="mt-2 divide-y divide-line">
+              <ChannelRow
+                icon={FileSpreadsheet}
+                title="Planilha"
+                detail="CSV, TSV ou XLSX com prévia e validação por linha."
+                status="Disponível"
+                tone="sage"
+                href="/importar"
+              />
+              <ChannelRow
+                icon={Camera}
+                title="Foto e áudio"
+                detail="Registre pelo hub Registrar. A foto ainda não passa por OCR."
+                status="Disponível"
+                tone="sage"
+                href="/"
+              />
+              <ChannelRow
+                icon={Mail}
+                title="E-mail e XML"
+                detail="O contrato existe; falta o conector que lê a caixa de entrada."
+                status="Em preparação"
+                tone="mustard"
+              />
+              <ChannelRow
+                icon={QrCode}
+                title="QR Code da nota"
+                detail="Leitura da chave da NF-e e importação dos itens."
+                status="Em preparação"
+                tone="mustard"
+              />
+            </div>
+          </section>
+        </div>
+
+        <div className="space-y-4">
+          <section className="animate-rise rounded-[4px] border border-line bg-paper p-4">
+            <h2 className="text-[0.8125rem] font-bold text-ink">
+              Como vai funcionar
+            </h2>
+            <ol className="mt-3 space-y-3">
+              {STEPS.map((step, index) => (
+                <li key={step.title} className="flex gap-2.5">
+                  <span className="display grid size-6 flex-none place-items-center rounded-[3px] bg-sand text-[0.6875rem] font-bold text-ink">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <p className="text-[0.75rem] font-bold text-ink">
+                      {step.title}
+                    </p>
+                    <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-muted">
+                      {step.detail}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="animate-rise rounded-[4px] border border-line bg-paper p-4">
+            <div className="flex items-center gap-2">
+              <MessageCircle
+                className="size-4 text-sage-dark"
+                strokeWidth={2}
+              />
+              <h2 className="text-[0.8125rem] font-bold text-ink">
+                Exemplos de mensagem
+              </h2>
+            </div>
+            <div className="mt-3 space-y-2">
+              {WHATSAPP_EXAMPLES.map((example) => (
+                <div key={example.label}>
+                  <p className="mb-1 text-[0.5625rem] font-bold uppercase tracking-[0.1em] text-muted">
+                    {example.label}
+                  </p>
+                  <p className="w-fit max-w-full rounded-[4px] rounded-bl-none bg-cream px-2.5 py-1.5 text-[0.6875rem] leading-snug text-ink">
+                    {example.message}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <details className="animate-rise rounded-[4px] border border-line bg-paper p-4">
+            <summary className="cursor-pointer list-none text-[0.8125rem] font-bold text-ink">
+              Para quem vai conectar
+              <span className="mt-0.5 block text-[0.6875rem] font-normal text-muted">
+                Contrato, tabela e regra de idempotência
+              </span>
+            </summary>
+            <div className="mt-3 space-y-2 text-[0.6875rem] leading-relaxed text-muted">
+              <p>
+                O conector grava em <code>ingestion_events</code> e o webapp
+                transforma o evento em rascunho revisável.
+              </p>
+              <p>
+                O contrato público está em{" "}
+                <code>GET /api/integrations</code>, com canais,{" "}
+                <code>source_type</code> e campos obrigatórios.
+              </p>
+              <p>
+                <code>external_id</code> + canal evitam duplicar a mesma
+                mensagem. Nenhuma chave <code>service_role</code> vai para o
+                navegador.
+              </p>
+              <p className="flex items-center gap-1.5 pt-1 font-semibold text-sage-dark">
+                <Check className="size-3.5" strokeWidth={2.6} />
+                Contrato e tabela já aplicados no Supabase
+              </p>
+            </div>
+          </details>
+
+          <section className="animate-rise rounded-[4px] border border-mustard/40 bg-mustard-soft p-4">
+            <p className="text-[0.6875rem] font-bold uppercase tracking-[0.1em] text-mustard-dark">
+              O que falta
+            </p>
+            <ul className="mt-2 space-y-1.5 text-[0.6875rem] leading-relaxed text-ink/75">
+              <li>Verificar o número no WhatsApp Business.</li>
+              <li>Ativar o webhook do conector no servidor.</li>
+              <li>Testar o recebimento e a fila de rascunhos.</li>
+            </ul>
+            <p className="mt-2 text-[0.625rem] leading-relaxed text-muted">
+              Até lá, o canal continua “não conectado” — sem botão de mentira e
+              sem mensagem simulada.
+            </p>
+          </section>
+        </div>
+      </div>
+
+      {connectOpen ? (
+        <WhatsAppConnectSheet
+          initialPreferences={preferences}
+          onSaved={setPreferences}
+          onClose={() => setConnectOpen(false)}
+        />
+      ) : null}
+    </div>
+  );
+}

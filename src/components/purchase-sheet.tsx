@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
+  Camera,
   Check,
+  ImagePlus,
   PackageSearch,
   Plus,
+  RefreshCw,
   Search,
+  Trash2,
   Truck,
 } from "lucide-react";
 import { Sheet } from "./sheet";
@@ -14,7 +18,6 @@ import { MoneyInput } from "./money-input";
 import { PaymentPicker } from "./payment-picker";
 import { QuantityStepper } from "./quantity-stepper";
 import { useApp } from "@/lib/store";
-import { useToast } from "./toast";
 import { formatBRL, formatBRLInput, parseMoneyInput } from "@/lib/format";
 import { addDaysToDateOnly, formatDateOnly, todayDateOnly } from "@/lib/analytics";
 import type { PaymentMethod, Product } from "@/lib/types";
@@ -23,6 +26,8 @@ interface PurchaseSheetProps {
   onClose: () => void;
   initialProductId?: string;
   initialSupplierId?: string;
+  /** Abre com a foto da nota em destaque (compra registrada pelo fornecedor). */
+  initialWithReceipt?: boolean;
 }
 
 interface SuccessData {
@@ -32,15 +37,17 @@ interface SuccessData {
   totalCents: number;
   paidNow: boolean;
   dueDate?: string;
+  hasReceipt: boolean;
 }
 
 export function PurchaseSheet({
   onClose,
   initialProductId,
   initialSupplierId,
+  initialWithReceipt = false,
 }: PurchaseSheetProps) {
   const { products, suppliers, registerPurchase, addSupplier } = useApp();
-  const { toast } = useToast();
+  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   const initialProduct = initialProductId
     ? products.find((product) => product.id === initialProductId)
@@ -64,6 +71,9 @@ export function PurchaseSheet({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | undefined>();
   const [dueDate, setDueDate] = useState(addDaysToDateOnly(todayDateOnly(), 14));
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(initialWithReceipt);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -90,6 +100,21 @@ export function PurchaseSheet({
       )
       .slice(0, 5);
   }, [productName, products]);
+
+  useEffect(() => {
+    if (!receiptFile) {
+      setReceiptPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(receiptFile);
+    setReceiptPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [receiptFile]);
+
+  function clearReceipt() {
+    setReceiptFile(null);
+    if (receiptInputRef.current) receiptInputRef.current.value = "";
+  }
 
   const nameError = attempted && !productName.trim() ? "Diga o que comprou." : null;
   const costError =
@@ -145,6 +170,7 @@ export function PurchaseSheet({
         supplierName = supplier.name;
       }
 
+      const hasReceipt = receiptFile !== null;
       await registerPurchase({
         supplierId: finalSupplierId,
         productId: selectedProduct?.id,
@@ -154,7 +180,10 @@ export function PurchaseSheet({
         paidNow,
         dueDate: paidNow ? undefined : dueDate,
         paymentMethod: paymentMethod ?? "other",
-        sourceType: "manual",
+        sourceType: receiptFile ? "image_recognition" : "manual",
+        rawInput: receiptFile
+          ? `Nota: ${receiptFile.name.trim() || "foto da nota"}`
+          : undefined,
       });
 
       setSuccess({
@@ -164,6 +193,7 @@ export function PurchaseSheet({
         totalCents,
         paidNow,
         dueDate: paidNow ? undefined : dueDate,
+        hasReceipt,
       });
     } catch (error) {
       setSubmitError(
@@ -185,6 +215,8 @@ export function PurchaseSheet({
     setPaymentMethod(undefined);
     setAttempted(false);
     setSubmitError(null);
+    clearReceipt();
+    setReceiptOpen(initialWithReceipt);
   }
 
   if (success) {
@@ -227,6 +259,12 @@ export function PurchaseSheet({
               : `Ficou para pagar em ${formatDateOnly(success.dueDate ?? todayDateOnly())}`}
             {success.supplierName ? ` · ${success.supplierName}` : ""}
           </p>
+          {success.hasReceipt ? (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-[3px] bg-cream px-2 py-1 text-[0.6875rem] font-medium text-muted">
+              <Camera className="size-3" strokeWidth={2} />
+              Registro marcado como vindo de uma nota
+            </p>
+          ) : null}
         </div>
       </Sheet>
     );
@@ -234,8 +272,12 @@ export function PurchaseSheet({
 
   return (
     <Sheet
-      title="Compra de mercadoria"
-      description="A entrada no estoque e o custo do item são atualizados juntos."
+      title={initialWithReceipt ? "Compra pela nota" : "Compra de mercadoria"}
+      description={
+        initialWithReceipt
+          ? "Anexe o cupom e confira o fornecedor, o item e o valor antes de salvar."
+          : "A entrada no estoque e o custo do item são atualizados juntos."
+      }
       onClose={onClose}
       footer={
         <button
@@ -260,6 +302,111 @@ export function PurchaseSheet({
         className="space-y-5"
         noValidate
       >
+        {receiptOpen || receiptFile ? (
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="field-label mb-0 flex items-center gap-1.5">
+                <Camera
+                  className="size-4 flex-none text-terracotta-dark"
+                  strokeWidth={2}
+                />
+                Foto da nota{" "}
+                <span className="font-normal text-muted">(opcional)</span>
+              </span>
+              {!receiptFile ? (
+                <button
+                  type="button"
+                  onClick={() => setReceiptOpen(false)}
+                  className="text-[0.6875rem] font-bold text-muted underline underline-offset-2 transition-colors hover:text-ink"
+                >
+                  Ocultar
+                </button>
+              ) : null}
+            </div>
+
+            <input
+              ref={receiptInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              aria-label="Escolher foto da nota da compra"
+              onChange={(event) => {
+                setReceiptFile(event.target.files?.[0] ?? null);
+                setSubmitError(null);
+              }}
+            />
+
+            {receiptPreview ? (
+              <div className="overflow-hidden rounded-[4px] border border-line bg-cream">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={receiptPreview}
+                  alt="Prévia da nota da compra"
+                  className="max-h-52 w-full object-contain"
+                />
+                <div className="flex items-center gap-2 border-t border-line p-2">
+                  <button
+                    type="button"
+                    onClick={() => receiptInputRef.current?.click()}
+                    className="btn btn-secondary h-9 flex-1 text-xs"
+                  >
+                    <RefreshCw className="size-3.5" strokeWidth={2.2} />
+                    Trocar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearReceipt}
+                    className="btn btn-ghost h-9 px-3 text-xs font-semibold text-terracotta-dark"
+                  >
+                    <Trash2 className="size-3.5" strokeWidth={2} />
+                    Remover
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => receiptInputRef.current?.click()}
+                className="flex min-h-[6.75rem] w-full flex-col items-center justify-center gap-2 rounded-[4px] border border-dashed border-sand-dark bg-cream px-4 text-center transition-colors hover:border-terracotta hover:bg-terracotta-soft/50"
+              >
+                <span className="grid size-10 place-items-center rounded-[4px] bg-paper text-terracotta-dark">
+                  <ImagePlus className="size-5" strokeWidth={1.9} />
+                </span>
+                <span className="text-sm font-bold text-ink">
+                  Tirar foto ou escolher
+                </span>
+                <span className="text-[0.6875rem] text-muted">
+                  Cupom, nota fiscal ou comprovante
+                </span>
+              </button>
+            )}
+
+            <p className="field-hint">
+              Nesta versão a foto não é enviada para o servidor. O registro fica
+              marcado como vindo de uma nota para você conferir depois.
+            </p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setReceiptOpen(true)}
+            className="flex w-full items-center gap-3 rounded-[4px] border border-dashed border-sand-dark bg-cream p-3 text-left transition-colors hover:border-terracotta hover:bg-terracotta-soft/40"
+          >
+            <span className="grid size-10 flex-none place-items-center rounded-[4px] bg-paper text-terracotta-dark">
+              <Camera className="size-5" strokeWidth={1.9} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[0.8125rem] font-bold text-ink">
+                Registrar pela nota
+              </span>
+              <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted">
+                Anexe o cupom ou a nota fiscal (opcional)
+              </span>
+            </span>
+            <Plus className="size-4 flex-none text-muted" strokeWidth={2.2} />
+          </button>
+        )}
+
         <div className="relative">
           <label htmlFor="purchase-item" className="field-label">
             O que você comprou?
@@ -271,7 +418,7 @@ export function PurchaseSheet({
             />
             <input
               id="purchase-item"
-              autoFocus={!initialProduct}
+              autoFocus={!initialProduct && !initialWithReceipt}
               value={productName}
               onChange={(event) => handleNameChange(event.target.value)}
               onFocus={() => setShowSuggestions(true)}

@@ -2,7 +2,9 @@
 
 import { useMemo } from "react";
 import {
+  ArrowRight,
   CalendarDays,
+  Camera,
   Mail,
   Pencil,
   Phone,
@@ -120,6 +122,27 @@ export function SupplierDetailSheet({
             </p>
           </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            openPurchase({ supplierId: supplier.id, withReceipt: true })
+          }
+          className="flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
+        >
+          <span className="grid size-10 flex-none place-items-center rounded-[4px] bg-paper text-terracotta-dark">
+            <Camera className="size-5" strokeWidth={1.9} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[0.8125rem] font-bold text-ink">
+              Registrar compra pela nota
+            </span>
+            <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted">
+              Fotografe o cupom e confira item, quantidade e valor.
+            </span>
+          </span>
+          <ArrowRight className="size-4 flex-none text-muted" strokeWidth={2.2} />
+        </button>
 
         {supplier.phone || supplier.email || supplier.notes ? (
           <div className="space-y-2 rounded-[4px] border border-line bg-paper p-3 text-xs">

@@ -4,7 +4,7 @@
 
 MVP de um sistema web responsivo para MEIs e autônomos. A tela principal responde três perguntas com palavras do dia a dia: **quanto entrou**, **quanto saiu** e **quanto sobrou**. O registro de uma venda leva uma tela só, com produto, valor e pagamento, e já baixa o estoque — exceto para serviços, que não controlam quantidade.
 
-Além do caixa, o app acompanha **fornecedores**, **compras** (com custo por fornecedor), **contas a pagar**, **retiradas** e **análises** de preço, previsão de pagamento e dinheiro parado no estoque. O histórico pode ser trazido de uma vez por **CSV, TSV ou XLSX**.
+Além do caixa, o app acompanha **fornecedores**, **compras** (com custo por fornecedor), **contas a pagar**, **retiradas** e **análises** de preço, previsão de pagamento e dinheiro parado no estoque. A compra pode ser registrada **pela foto da nota**, direto no fornecedor. O histórico pode ser trazido de uma vez por **CSV, TSV ou XLSX**, e a tela de **integrações** já deixa o WhatsApp preparado — sem fingir uma conexão que ainda não existe.
 
 A demo tem três ramos prontos (**confeitaria**, **barbearia** e **loja de roupas**) e troca a identidade, os produtos e os exemplos junto com o ramo.
 
@@ -118,11 +118,13 @@ Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md
 ### Fluxos principais
 
 - **Escolha do ramo** — no menu da loja, o seletor **Confeitaria / Barbearia / Loja de roupas** troca nome, produtos, exemplos e vocabulário. Cada ramo tem seus próprios dados de demonstração.
-- **Registrar** — o botão principal abre um hub com **Vender**, **Gasto**, **Compra**, **Retirada**, **Foto da nota** e **Áudio**, além do atalho para **Importar planilha**. É a porta única de entrada, para o usuário não precisar decorar onde cada coisa mora.
+- **Registrar** — o botão principal abre um hub com **Vender**, **Gasto**, **Compra**, **Retirada**, **Foto da nota** e **Áudio**, além dos atalhos para **Importar planilha** e **WhatsApp e integrações**. É a porta única de entrada, para o usuário não precisar decorar onde cada coisa mora.
 - **Venda rápida em uma tela** — “O que vendeu?”, “Quanto entrou?” e “Como pagou?”. O seletor de produto recolhe depois da escolha para os três campos caberem no celular. Itens com estoque baixam automaticamente; serviços não movimentam estoque.
 - **Gasto rápido** — descrição, valor e forma de pagamento (opcional).
 - **Fornecedores** — cadastro com telefone, e-mail e observações. A tela de cada fornecedor reúne o que falta pagar, o histórico de compras, os itens comprados e o preço praticado.
 - **Compra de mercadoria** — escolhe fornecedor, item, quantidade e custo unitário. Se for item novo, ele entra no estoque; se existir, o custo é recalculado pela média ponderada. A compra pode ser paga na hora (sai do caixa) ou ficar para pagar (vira conta a pagar).
+- **Compra pela nota** — no detalhe do fornecedor, o botão **Registrar compra pela nota** abre a compra já vinculada a ele, com foto opcional do cupom. Ao cadastrar um fornecedor novo, **Salvar e registrar nota** faz o mesmo em um passo. Com foto, o lançamento fica com `source_type = image_recognition`; sem foto, continua `manual`. A imagem ainda não é enviada ao servidor.
+- **Integrações** — a rota `/integracoes` mostra o WhatsApp como **não conectado**, com todas as letras, e permite salvar o número e as regras de entrada neste navegador (`meu-caixa:whatsapp:v1`). Também lista o que já funciona (planilha, foto, áudio) e o que está em preparação (e-mail/XML, QR Code). Nenhuma conexão é simulada.
 - **Contas a pagar** — criadas por compra a prazo ou manualmente. O caixa **só muda no dia do pagamento**. A previsão agrupa vencidas, próximos 7 dias e “mais para frente”.
 - **Retirada** — dinheiro que você tira do caixa para uso pessoal. Entra em “Saiu” e no extrato com o rótulo **retirada**, mas não é despesa do negócio nem conta a pagar.
 - **Importar planilha** — CSV, TSV ou XLSX com vendas, gastos, compras, contas e retiradas. Mostra prévia, valida linha por linha e não mexe no estoque atual. As compras importadas alimentam o histórico de preços por fornecedor.
@@ -151,10 +153,11 @@ Cada cenário também traz fornecedores com histórico de compras, contas em abe
 
 Na barbearia, **Corte**, **Barba** e **Corte + barba** são serviços: aparecem na venda e no catálogo, mas não baixam estoque. **Pomada** e **Shampoo** são produtos controlados.
 
-Para voltar ao estado inicial: menu **Sua loja** → **Restaurar exemplo**. No modo nuvem isso recria o cenário do ramo no Supabase; no modo local, limpa o `localStorage`. No console do navegador, o equivalente local é:
+Para voltar ao estado inicial: menu **Sua loja** → **Restaurar exemplo**. No modo nuvem isso recria o cenário do ramo no Supabase; no modo local, limpa o `localStorage`. A preparação do WhatsApp é independente e continua salva; para apagá-la também, remova `meu-caixa:whatsapp:v1`.
 
 ```js
 localStorage.removeItem("meu-caixa:demo:v3");
+localStorage.removeItem("meu-caixa:whatsapp:v1");
 location.reload();
 ```
 
@@ -180,6 +183,7 @@ src/
     fornecedores/page.tsx   # fornecedores e histórico de compras
     analises/page.tsx       # previsão, preços, encalhe e retiradas
     importar/page.tsx       # importação de CSV/TSV/XLSX
+    integracoes/page.tsx    # preparação do WhatsApp e estado dos canais
     api/config/route.ts     # entrega URL + chave pública em runtime
     api/health/route.ts     # health check para Docker e monitoramento
     api/integrations/route.ts # contrato de entrada para conectores futuros
@@ -199,13 +203,15 @@ src/
     suppliers-view.tsx      # lista e busca de fornecedores
     supplier-sheet.tsx      # cadastro/edição de fornecedor
     supplier-detail-sheet.tsx # compras, contas e preços do fornecedor
-    purchase-sheet.tsx      # compra com estoque, custo e conta a pagar
+    purchase-sheet.tsx      # compra com estoque, custo, nota opcional e conta a pagar
     bills-view.tsx          # previsão e lista de contas
     bill-sheet.tsx          # conta manual
     bill-pay-sheet.tsx      # pagamento de conta
     withdrawal-sheet.tsx    # retirada do caixa
     analytics-view.tsx      # previsão, preços, encalhe e retiradas
     import-view.tsx         # upload, prévia e importação
+    integrations-view.tsx   # canais de entrada e status honesto do WhatsApp
+    whatsapp-connect-sheet.tsx # número e regras da futura conexão
     action-provider.tsx     # estado global dos sheets
     sheet.tsx               # bottom sheet mobile / modal central no desktop
     register-sheet.tsx      # hub: venda, gasto, compra, retirada, foto, áudio
@@ -228,6 +234,7 @@ src/
     analytics.ts            # previsão, preços por fornecedor, encalhe, retiradas
     import.ts               # parser CSV/TSV/XLSX, modelo e validação
     ingestion.ts            # contrato e normalização de entradas externas
+    integrations.ts         # preferências locais do WhatsApp e exemplos
     format.ts               # moeda, datas e saudação
     cn.ts
     supabase/
@@ -411,6 +418,8 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - Persistência real no **Supabase**, com sessão anônima por navegador e RLS por negócio.
 - Fallback automático para `localStorage` quando o Supabase não está configurado ou a conexão falha — a tela avisa qual modo está ativo.
 - Fornecedores, compras, contas a pagar, retiradas, análises e importação de CSV/TSV/XLSX funcionando nos dois modos.
+- Compra pela nota no detalhe do fornecedor, com foto opcional e vínculo com o fornecedor; a origem `image_recognition` é gravada no lançamento.
+- Tela `/integracoes` com o WhatsApp em estado **não conectado**, preparação local do número e regras, e a lista real dos demais canais.
 - Sem upload real de áudio/foto no servidor: a foto é lida no navegador (preview) e o lançamento é salvo com `source_type = image_recognition`; o áudio é simulado com um rascunho de exemplo.
 - Os três ramos usam dados fictícios e trocam o cenário inteiro ao serem selecionados.
 - Sem multiusuário: uma sessão anônima = um negócio. Sair do navegador ou limpar os dados perde a sessão.
@@ -428,7 +437,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - Limpar os dados do navegador apaga o vínculo com o negócio (o registro continua no banco, mas sem acesso).
 - O modo privado pode bloquear o `localStorage` e a sessão.
 - A foto ainda não é armazenada nem processada por OCR/Vision.
-- WhatsApp, e-mail/XML e QR Code ainda não têm conector ativo: a tabela e o contrato de entrada já estão prontos, mas a integração fica para a próxima etapa.
+- O WhatsApp ainda não está conectado: a tela de integrações só salva o número e as preferências neste navegador. E-mail/XML e QR Code também não têm conector ativo; a tabela e o contrato de entrada já estão prontos, mas a integração fica para a próxima etapa.
 
 ### Próximos passos para produção
 

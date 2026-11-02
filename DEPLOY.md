@@ -12,6 +12,8 @@ O app é **Next.js + Supabase**. Não existe backend próprio além de duas rota
 
 Como a configuração é lida a cada requisição, **trocar de projeto Supabase não exige rebuild**.
 
+A tela `/integracoes` é servida pelo próprio app e não tem configuração de servidor nesta versão: ela mostra o WhatsApp como **não conectado** e guarda apenas o número e as preferências no `localStorage` do navegador (`meu-caixa:whatsapp:v1`). Nenhuma credencial de WhatsApp existe hoje no projeto.
+
 ---
 
 ## 1. Preparar o Supabase (uma vez)
@@ -233,6 +235,8 @@ No `fly.toml`, mantenha `internal_port = 3000`.
 
 Os nomes antigos `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` ainda são aceitos como fallback, mas não são necessários: a configuração é entregue por `/api/config` e não entra no bundle.
 
+A preparação do WhatsApp feita em `/integracoes` **não usa variável de ambiente** e não sai do navegador. Quando o conector real for implementado, as credenciais do provedor devem ficar só no servidor (webhook/worker), nunca em variável com prefixo `NEXT_PUBLIC_`.
+
 **Nunca versione** `.env`, `.env.local` ou qualquer chave secreta. O `.gitignore` e o `.dockerignore` já bloqueiam esses arquivos.
 
 ---
@@ -244,6 +248,7 @@ Os nomes antigos `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` ai
 - [ ] `SUPABASE_URL` e `SUPABASE_ANON_KEY` configuradas no host
 - [ ] `/api/health` responde `"supabase":"configured"`
 - [ ] `/api/integrations` responde com o contrato (versão 1)
+- [ ] `/integracoes` abre com o WhatsApp em **não conectado** e o aviso de preparação local
 - [ ] HTTPS funcionando (Vercel/Caddy)
 - [ ] Domínio final cadastrado na **Site URL** do Supabase
 - [ ] Porta do app não exposta publicamente no VPS
@@ -261,6 +266,10 @@ Cada navegador cria uma sessão anônima própria (`meu-caixa:auth` no `localSto
 - Limpar os dados do navegador **perde o acesso** ao caixa (os dados continuam no banco, mas sem usuário para acessá-los).
 - Não há sincronização entre celular e computador.
 - Para uso real, o próximo passo é permitir upgrade da conta anônima para e-mail/telefone.
+
+### Preparação do WhatsApp
+
+O número e as preferências salvos em `/integracoes` ficam só no `localStorage` do navegador, na chave `meu-caixa:whatsapp:v1`. Eles não entram no backup do Supabase, não sincronizam entre aparelhos e não conectam o WhatsApp. **Restaurar exemplo** não apaga essa preparação; para removê-la, limpe a chave ou os dados do navegador.
 
 ### Dados de exemplo
 

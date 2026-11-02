@@ -8,6 +8,7 @@ import {
   Cloud,
   CloudOff,
   FileSpreadsheet,
+  MessageCircle,
   Mic,
   ReceiptText,
   RefreshCw,
@@ -247,6 +248,30 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
               );
             })}
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              router.push("/integracoes");
+            }}
+            className="mt-2 flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
+          >
+            <span className="grid size-9 flex-none place-items-center rounded-[4px] bg-sage-soft text-sage-dark">
+              <MessageCircle className="size-4" strokeWidth={2} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[0.8125rem] font-bold text-ink">
+                WhatsApp e integrações
+              </span>
+              <span className="mt-0.5 block text-[0.6875rem] text-muted">
+                Prepare o número e veja os canais de entrada
+              </span>
+            </span>
+            <span className="badge bg-mustard-soft text-mustard-dark">
+              Não conectado
+            </span>
+          </button>
         </section>
 
         <section>

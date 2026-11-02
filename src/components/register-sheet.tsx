@@ -8,6 +8,7 @@ import {
   Camera,
   FileSpreadsheet,
   HandCoins,
+  MessageCircle,
   Mic,
   ShoppingBasket,
   type LucideIcon,
@@ -109,6 +110,11 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
     router.push("/importar");
   }
 
+  function openIntegrations() {
+    onClose();
+    router.push("/integracoes");
+  }
+
   return (
     <Sheet
       title="Registrar"
@@ -181,6 +187,27 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
           <span className="badge bg-ink text-cream">CSV ou XLSX</span>
         </button>
 
+        <button
+          type="button"
+          onClick={openIntegrations}
+          className="flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
+        >
+          <span className="grid size-9 flex-none place-items-center rounded-[4px] bg-sage-soft text-sage-dark">
+            <MessageCircle className="size-4" strokeWidth={2} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[0.8125rem] font-bold text-ink">
+              WhatsApp e integrações
+            </span>
+            <span className="mt-0.5 block text-[0.6875rem] text-muted">
+              Prepare o número e veja o que já entra sozinho
+            </span>
+          </span>
+          <span className="badge bg-mustard-soft text-mustard-dark">
+            Não conectado
+          </span>
+        </button>
+
         <div className="rounded-[4px] border border-line bg-cream p-3">
           <p className="text-[0.6875rem] font-bold uppercase tracking-[0.1em] text-muted">
             Como funciona
@@ -188,7 +215,8 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
           <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ink/80">
             Digitar e fotografar já salvam na hora. Compra a prazo cria a conta
             a pagar sem tirar dinheiro do caixa. Áudio entra como rascunho para
-            você conferir antes de confirmar.
+            você conferir antes de confirmar. O WhatsApp ainda não está
+            conectado — a tela de integrações só prepara o número.
           </p>
         </div>
       </div>

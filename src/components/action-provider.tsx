@@ -35,7 +35,7 @@ type SheetState =
   | { type: "edit-product"; productId: string }
   | { type: "supplier-form"; supplierId?: string }
   | { type: "supplier"; supplierId: string }
-  | { type: "purchase"; productId?: string; supplierId?: string }
+  | { type: "purchase"; productId?: string; supplierId?: string; withReceipt?: boolean }
   | { type: "withdrawal" }
   | { type: "bill"; supplierId?: string }
   | { type: "pay-bill"; billId: string }
@@ -44,6 +44,7 @@ type SheetState =
 interface PurchaseOptions {
   productId?: string;
   supplierId?: string;
+  withReceipt?: boolean;
 }
 
 interface ActionsContextValue {
@@ -105,6 +106,7 @@ export function ActionProvider({ children }: { children: ReactNode }) {
         type: "purchase",
         productId: options?.productId,
         supplierId: options?.supplierId,
+        withReceipt: options?.withReceipt,
       }),
     [],
   );
@@ -199,6 +201,7 @@ export function ActionProvider({ children }: { children: ReactNode }) {
           onClose={close}
           initialProductId={sheet.productId}
           initialSupplierId={sheet.supplierId}
+          initialWithReceipt={sheet.withReceipt}
         />
       ) : null}
       {sheet.type === "withdrawal" ? <WithdrawalSheet onClose={close} /> : null}
