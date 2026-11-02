@@ -8,7 +8,6 @@ import { QuickActions } from "./quick-actions";
 import { PendingReviewCard } from "./pending-review-card";
 import { ActivityFeed } from "./activity-feed";
 import { PayablesCard } from "./payables-card";
-import { InsightsCard } from "./insights-card";
 
 export function HomeView() {
   const { business, cloudStatus, cloudMessage, retryCloud } = useApp();
@@ -51,13 +50,12 @@ export function HomeView() {
       <div className="mt-6 grid items-start gap-5 lg:mt-8 lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] lg:gap-8">
         <div className="space-y-3 lg:sticky lg:top-[6.25rem]">
           <BalanceCard />
-          <PendingReviewCard />
           <QuickActions />
+          <PendingReviewCard />
         </div>
 
         <div className="space-y-5">
           <PayablesCard />
-          <InsightsCard />
           <ActivityFeed />
         </div>
       </div>

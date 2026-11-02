@@ -9,6 +9,7 @@ import {
   HandCoins,
   MessageCircle,
   Mic,
+  PackagePlus,
   ShoppingBasket,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,7 @@ interface OptionProps {
   onClick: () => void;
   tone: "sage" | "terracotta" | "mustard" | "sand" | "blush";
   disabled?: boolean;
+  className?: string;
 }
 
 const TONES: Record<OptionProps["tone"], string> = {
@@ -38,13 +40,24 @@ const TONES: Record<OptionProps["tone"], string> = {
   blush: "bg-blush text-terracotta-dark",
 };
 
-function Option({ icon: Icon, label, hint, onClick, tone, disabled }: OptionProps) {
+function Option({
+  icon: Icon,
+  label,
+  hint,
+  onClick,
+  tone,
+  disabled,
+  className,
+}: OptionProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex min-h-[6.75rem] flex-col items-start justify-between gap-2.5 rounded-[4px] border border-line bg-paper p-3 text-left transition-colors hover:border-sand-dark hover:bg-cream active:translate-y-[1px] disabled:opacity-60"
+      className={cn(
+        "flex min-h-[6.75rem] flex-col items-start justify-between gap-2.5 rounded-[4px] border border-line bg-paper p-3 text-left transition-colors hover:border-sand-dark hover:bg-cream active:translate-y-[1px] disabled:opacity-60",
+        className,
+      )}
     >
       <span
         className={cn(
@@ -75,6 +88,7 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
     openPurchase,
     openWithdrawal,
     openAudio,
+    openStock,
   } = useActions();
   const router = useRouter();
 
@@ -102,6 +116,7 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
             label={segment.saleAction}
             hint="Entrou dinheiro no caixa"
             onClick={openSale}
+            className="col-span-2"
           />
           <Option
             tone="terracotta"
@@ -137,6 +152,13 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
             label="Áudio"
             hint="Fale o que você vendeu"
             onClick={openAudio}
+          />
+          <Option
+            tone="sand"
+            icon={PackagePlus}
+            label={segment.stockLabel}
+            hint="Entrada rápida de mercadoria"
+            onClick={() => openStock()}
           />
         </div>
 

@@ -134,7 +134,7 @@ Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md
 ### Fluxos principais
 
 - **Escolha do ramo** — no menu da loja, o seletor **Confeitaria / Barbearia / Loja de roupas** troca nome, produtos, exemplos e vocabulário. Cada ramo tem seus próprios dados de demonstração.
-- **Registrar** — o botão principal abre um hub com **Vender**, **Gasto**, **Compra**, **Retirada**, **Foto da nota** e **Áudio**, além dos atalhos para **Importar planilha** e **WhatsApp e integrações**. É a porta única de entrada, para o usuário não precisar decorar onde cada coisa mora.
+- **Registrar** — o botão principal e o botão fixo no rodapé abrem um hub com **Vender**, **Gasto**, **Compra**, **Retirada**, **Foto da nota**, **Áudio** e **Estoque**, além dos atalhos para **Importar planilha** e **WhatsApp e integrações**. É a porta única de entrada, para o usuário não precisar decorar onde cada coisa mora.
 - **Venda rápida em uma tela** — “O que vendeu?”, “Quanto entrou?” e “Como pagou?”. O seletor de produto recolhe depois da escolha para os três campos caberem no celular. Itens com estoque baixam automaticamente; serviços não movimentam estoque.
 - **Gasto rápido** — descrição, valor e forma de pagamento (opcional).
 - **Fornecedores** — cadastro com telefone, e-mail e observações. A tela de cada fornecedor reúne o que falta pagar, o histórico de compras, os itens comprados e o preço praticado.
@@ -215,7 +215,7 @@ src/
     balance-card.tsx        # Entrou / Saiu / Sobrou
     payables-card.tsx       # resumo de contas a pagar na home
     insights-card.tsx       # dinheiro parado e economia na home
-    quick-actions.tsx       # botão Registrar + atalhos
+    quick-actions.tsx       # botão Registrar da home
     pending-review-card.tsx # card de conferência da IA
     activity-feed.tsx       # extrato + alertas de estoque
     stock-view.tsx          # página de estoque
@@ -273,7 +273,7 @@ supabase/
 1. `src/app/page.tsx` renderiza `HomeView`.
 2. `src/components/home-view.tsx` monta o grid de duas colunas no desktop e a pilha no celular.
 3. `src/components/balance-card.tsx` mostra **Sobrou no caixa**, **Entrou hoje** e **Saiu hoje**.
-4. `src/components/quick-actions.tsx` abre o hub **Registrar** e mantém os atalhos de gasto e estoque.
+4. `src/components/quick-actions.tsx` concentra o botão **Registrar** da home; os atalhos ficam dentro do hub.
 5. `src/components/register-sheet.tsx` é o hub; cada opção abre uma sheet específica (`sale-sheet.tsx`, `expense-sheet.tsx`, `purchase-sheet.tsx`, `withdrawal-sheet.tsx`, `receipt-sheet.tsx`) ou a gravação real (`audio-sheet.tsx`).
 6. `src/components/payables-card.tsx` e `insights-card.tsx` resumem contas e dinheiro parado na home.
 7. `src/components/pending-review-card.tsx` aparece só quando há rascunho de IA.

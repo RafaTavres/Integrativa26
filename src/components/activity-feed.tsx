@@ -108,7 +108,7 @@ export function ActivityFeed() {
     [transactions],
   );
 
-  const visible = expanded ? processed : processed.slice(0, 6);
+  const visible = expanded ? processed : processed.slice(0, 5);
   const hiddenCount = processed.length - visible.length;
 
   const groups = useMemo(() => {
@@ -223,7 +223,7 @@ export function ActivityFeed() {
           </button>
         ) : null}
 
-        {expanded && processed.length > 6 ? (
+        {expanded && processed.length > 5 ? (
           <button
             type="button"
             onClick={() => setExpanded(false)}

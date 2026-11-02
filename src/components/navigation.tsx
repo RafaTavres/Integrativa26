@@ -21,7 +21,7 @@ import { cn } from "@/lib/cn";
 export function TopBar() {
   const pathname = usePathname();
   const { business, segment } = useApp();
-  const { openMore, openSale } = useActions();
+  const { openMore, openRegister } = useActions();
 
   const navItems = [
     { href: "/", label: "Início", icon: Home },
@@ -66,11 +66,11 @@ export function TopBar() {
         <div className="flex flex-none items-center gap-2">
           <button
             type="button"
-            onClick={openSale}
+            onClick={openRegister}
             className="btn btn-primary hidden h-9 px-3.5 text-[0.8125rem] lg:inline-flex"
           >
             <Plus className="size-4" strokeWidth={2.4} />
-            {segment.saleAction}
+            Registrar
           </button>
           <button
             type="button"
@@ -101,7 +101,7 @@ export function TopBar() {
 export function BottomNav() {
   const pathname = usePathname();
   const { segment } = useApp();
-  const { openSale, openMore } = useActions();
+  const { openRegister, openMore } = useActions();
 
   const leftItem = { href: "/", label: "Início", icon: Home };
   const rightItem = { href: "/estoque", label: segment.stockLabel, icon: Boxes };
@@ -157,13 +157,13 @@ export function BottomNav() {
 
         <button
           type="button"
-          onClick={openSale}
+          onClick={openRegister}
           className="mx-auto flex flex-col items-center gap-1 rounded-[4px] text-[0.625rem] font-bold text-ink"
         >
           <span className="grid h-9 w-16 place-items-center rounded-[4px] border-b-[3px] border-terracotta-dark bg-terracotta text-cream">
             <Plus className="size-5" strokeWidth={2.6} />
           </span>
-          {segment.saleAction}
+          Registrar
         </button>
 
         <Link
