@@ -1006,8 +1006,9 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
                               onChange={(next) =>
                                 updateItem(item.key, { quantity: next })
                               }
-                              min={1}
+                              min={Number.isInteger(item.quantity) ? 1 : 0.001}
                               max={9999}
+                              step={Number.isInteger(item.quantity) ? 1 : 0.01}
                               label={`Quantidade do item ${index + 1}`}
                             />
                           </div>

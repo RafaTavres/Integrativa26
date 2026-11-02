@@ -47,6 +47,9 @@ const MAX_DIMENSION = 3000;
 const MONEY_SOURCE =
   "\\d{1,3}(?:\\.\\d{3})*,\\d{2}|\\d+,\\d{2}|\\d{1,3}(?:\\.\\d{3})*\\.\\d{2}";
 
+/** Quantidade inteira ou decimal, como "2", "1,00" ou "4,28". */
+const QUANTITY_SOURCE = "\\d{1,3}(?:[.,]\\d{1,3})?";
+
 const MONEY_TOKEN = new RegExp(
   `(?:R\\$\\s*)?(${MONEY_SOURCE}|\\d{1,3}(?:\\.\\d{3})+|\\d+)`,
   "gi",
@@ -54,7 +57,7 @@ const MONEY_TOKEN = new RegExp(
 
 /** Unidade e operador que aparecem entre a quantidade e o valor unitário. */
 const UNIT_SOURCE =
-  "(?:un|und|unid|unidade|unidades|kg|g|lt|ml|pc|pct|cx|caixa|pacote|pacotes|dz|duzia|dúzia)?";
+  "(?:un|und|unid|unidade|unidades|kg|g|lt|ml|pc|pct|cx|caixa|pacote|pacotes|dz|duzia|dúzia|=\\s*\\d{1,2})?";
 const OPERATOR_SOURCE = "(?:x|×|@)?";
 
 const NON_ITEM = new RegExp(
@@ -214,6 +217,22 @@ function parseMoneyToken(raw: string): number | undefined {
   if (!Number.isFinite(value) || value <= 0) return undefined;
   const cents = Math.round(value * 100);
   return cents > 0 ? cents : undefined;
+}
+
+function parseQuantityToken(raw: string): number {
+  const cleaned = raw.trim();
+  let normalized = cleaned;
+  if (cleaned.includes(",")) {
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d{1,3}\.\d{3}$/.test(cleaned)) {
+    normalized = cleaned.replace(".", "");
+  }
+  const value = Number(normalized);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function clampQuantity(quantity: number): number {
+  return Math.min(9999, Math.max(0.001, quantity));
 }
 
 function moneyTokens(line: string): number[] {
@@ -401,21 +420,28 @@ function parseItems(lines: string[]): ParsedItem[] {
   ) => {
     const name = cleanItemName(rawName);
     if (!isPlausibleItemName(name)) return;
-    if (totalCents < 1 || quantity < 1) return;
+    if (totalCents < 1 || quantity <= 0) return;
 
     // O mesmo produto pode aparecer em mais de uma linha (lotes diferentes).
-    // Soma as quantidades em vez de descartar a segunda leitura.
+    // Soma as quantidades, mas só quando o custo unitário também bate; preços
+    // diferentes podem ser produtos ou promoções distintas e não devem virar
+    // uma média que não existe na nota.
     const key = normalizeText(name);
-    const existing = items.find((item) => normalizeText(item.name) === key);
+    const unitCost = totalCents / quantity;
+    const existing = items.find((item) => {
+      if (normalizeText(item.name) !== key) return false;
+      const existingUnitCost = item.totalCents / item.quantity;
+      return Math.abs(existingUnitCost - unitCost) <= 1;
+    });
     if (existing) {
-      existing.quantity = Math.min(999, existing.quantity + Math.round(quantity));
+      existing.quantity = clampQuantity(existing.quantity + quantity);
       existing.totalCents += totalCents;
       return;
     }
 
     items.push({
       name,
-      quantity: Math.min(999, Math.round(quantity)),
+      quantity: clampQuantity(quantity),
       totalCents,
     });
   };
@@ -431,14 +457,34 @@ function parseItems(lines: string[]): ParsedItem[] {
     }
 
     const withUnitAndTotal = new RegExp(
-      `^(.+?)\\s+(\\d{1,3})(?!\\d)\\s*${UNIT_SOURCE}\\s*${OPERATOR_SOURCE}\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})\\s*(?:=|→)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})$`,
+      `^(.+?)\\s+(${QUANTITY_SOURCE})(?![\\d.,])\\s*${UNIT_SOURCE}\\s*${OPERATOR_SOURCE}\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})\\s*(?:=|→)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})$`,
       "i",
     ).exec(line);
 
     if (withUnitAndTotal) {
-      const quantity = Number(withUnitAndTotal[2]);
+      let quantity = parseQuantityToken(withUnitAndTotal[2]);
+      const unitPriceCents = parseMoneyToken(withUnitAndTotal[3]);
       const totalCents = parseMoneyToken(withUnitAndTotal[4]);
-      if (quantity >= 1 && totalCents) {
+      // O OCR às vezes perde a vírgula da quantidade ("4,28" vira "428").
+      // Quando o preço unitário e o total estão legíveis, o total manda:
+      // 23,43 / 5,48 = 4,28.
+      if (quantity > 0 && unitPriceCents && totalCents) {
+        const expected = quantity * unitPriceCents;
+        if (Math.abs(expected - totalCents) > Math.max(2, totalCents * 0.05)) {
+          const inferred = totalCents / unitPriceCents;
+          // Só corrige quando a quantidade lida é muito maior que a inferida:
+          // é o caso clássico de "4,28" lido como "428". Assim uma nota com
+          // total mal lido não vira uma quantidade esquisita.
+          if (
+            inferred > 0 &&
+            inferred <= 9999 &&
+            quantity >= inferred * 10
+          ) {
+            quantity = Math.round(inferred * 100) / 100;
+          }
+        }
+      }
+      if (quantity > 0 && totalCents) {
         add(withUnitAndTotal[1], quantity, totalCents);
         pendingName = null;
         continue;
@@ -446,14 +492,14 @@ function parseItems(lines: string[]): ParsedItem[] {
     }
 
     const withQuantity = new RegExp(
-      `^(.+?)\\s+(\\d{1,3})(?!\\d)\\s*${UNIT_SOURCE}\\s*${OPERATOR_SOURCE}\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})$`,
+      `^(.+?)\\s+(${QUANTITY_SOURCE})(?![\\d.,])\\s*${UNIT_SOURCE}\\s*${OPERATOR_SOURCE}\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})$`,
       "i",
     ).exec(line);
 
     if (withQuantity) {
-      const quantity = Number(withQuantity[2]);
+      const quantity = parseQuantityToken(withQuantity[2]);
       const totalCents = parseMoneyToken(withQuantity[3]);
-      if (quantity >= 1 && totalCents) {
+      if (quantity > 0 && totalCents) {
         add(withQuantity[1], quantity, totalCents);
         pendingName = null;
         continue;
@@ -463,12 +509,12 @@ function parseItems(lines: string[]): ParsedItem[] {
     // Linha só com quantidade e preço, sem nome. Usa o nome da linha anterior.
     if (pendingName) {
       const leadingQuantity = new RegExp(
-        `^(\\d{1,3})(?!\\d)\\s*${UNIT_SOURCE}\\s*(x|×|@)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})(?:\\s*(?:=|→)\\s*(?:R\\$\\s*)?(${MONEY_SOURCE}))?$`,
+        `^(${QUANTITY_SOURCE})(?![\\d.,])\\s*${UNIT_SOURCE}\\s*(x|×|@)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})(?:\\s*(?:=|→)\\s*(?:R\\$\\s*)?(${MONEY_SOURCE}))?$`,
         "i",
       ).exec(line);
 
       if (leadingQuantity) {
-        const quantity = Number(leadingQuantity[1]);
+        const quantity = parseQuantityToken(leadingQuantity[1]);
         const unitCents = parseMoneyToken(leadingQuantity[3]);
         const explicitTotal = leadingQuantity[4]
           ? parseMoneyToken(leadingQuantity[4])
@@ -477,7 +523,7 @@ function parseItems(lines: string[]): ParsedItem[] {
         const totalCents =
           explicitTotal ??
           (hasOperator && unitCents ? unitCents * quantity : unitCents);
-        if (quantity >= 1 && totalCents) {
+        if (quantity > 0 && totalCents) {
           add(pendingName, quantity, totalCents);
           pendingName = null;
           continue;
@@ -760,9 +806,13 @@ async function prepareCanvas(file: File, rotation: number): Promise<HTMLCanvasEl
   const image = await loadImage(file);
   const degrees = ((rotation % 360) + 360) % 360;
   const swap = degrees === 90 || degrees === 270;
+  const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+  // Fotos pequenas (comuns em prints e NFC-e) têm letras muito baixas para o
+  // Tesseract. Aumentar até 1200 px de largura melhora a leitura sem estourar
+  // o limite de 3000 px do lado maior.
   const scale = Math.min(
-    1,
-    MAX_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight),
+    MAX_DIMENSION / longestSide,
+    Math.max(1, 1200 / image.naturalWidth),
   );
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
   const height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -819,10 +869,14 @@ async function prepareCanvas(file: File, rotation: number): Promise<HTMLCanvasEl
     }
   }
   const range = Math.max(16, high - low);
+  // Em imagens já nítidas (prints e NFC-e) o contraste extra pode apagar
+  // detalhes finos, como a vírgula de "4,28". Só reforça quando a foto é
+  // lavada ou tem sombra.
+  const contrast = range >= 200 ? 1 : 1.12;
   const lut = new Uint8ClampedArray(256);
   for (let value = 0; value < 256; value += 1) {
     const stretched = ((value - low) * 255) / range;
-    lut[value] = (stretched - 128) * 1.12 + 128;
+    lut[value] = (stretched - 128) * contrast + 128;
   }
 
   for (let index = 0; index < data.length; index += 4) {

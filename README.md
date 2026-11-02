@@ -78,6 +78,7 @@ A foto é lida no navegador com **Tesseract.js**. `npm run dev` e `npm run build
 
 - A primeira leitura baixa cerca de 5 MB (worker, um núcleo WebAssembly e o idioma); o navegador cacheia e as próximas são rápidas.
 - Nenhuma imagem sai do aparelho. Não há chamada a serviço de OCR externo.
+- O parser entende quantidades decimais (`4,28 KG`), o formato de tabela da NFC-e e usa o total com o preço unitário para corrigir uma vírgula perdida pelo OCR.
 - Em produção, o `npm ci` precisa rodar antes do `npm run build` para que os arquivos do Tesseract existam. O Dockerfile e a Vercel já fazem isso.
 
 ### WhatsApp via n8n
