@@ -18,6 +18,8 @@ import { getSupabaseClient, loadSupabaseConfig } from "./supabase/client";
 import { addDaysToDateOnly, todayDateOnly } from "./analytics";
 import type { ImportRow, ImportSummary } from "./import";
 import {
+  abrirLojaWhatsapp,
+  carregarDadosWhatsapp,
   CloudError,
   confirmPendingSale,
   createBill as createCloudBill,
@@ -25,6 +27,7 @@ import {
   ensureAnonymousSession,
   importSpreadsheetRows,
   loadWorkspace,
+  LOJA_WHATSAPP_ID,
   openWorkspace,
   payBill as payCloudBill,
   registerExpense,
@@ -39,6 +42,7 @@ import {
   saveSupplier,
   setProductSupplier as setCloudProductSupplier,
   updateProduct as updateCloudProduct,
+  type DadosWhatsapp,
   type Workspace,
 } from "./supabase/workspace";
 import type {
@@ -199,9 +203,46 @@ interface AppContextValue {
   resetDemo: () => Promise<void>;
   createAudioDraft: (input: AudioDraftInput) => Promise<Transaction>;
   simulatePending: () => Promise<Transaction | null>;
+  naLojaWhatsapp: boolean;
+  entrarNaLojaWhatsapp: () => Promise<void>;
+  voltarParaMinhaLoja: () => Promise<void>;
+  carregarWhatsapp: () => Promise<DadosWhatsapp>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
+
+const LOJA_WHATSAPP_KEY = "estokar:loja-whatsapp";
+
+function lojaWhatsappEscolhida(): boolean {
+  try {
+    return window.localStorage.getItem(LOJA_WHATSAPP_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function lembrarLojaWhatsapp(escolhida: boolean) {
+  try {
+    if (escolhida) window.localStorage.setItem(LOJA_WHATSAPP_KEY, "1");
+    else window.localStorage.removeItem(LOJA_WHATSAPP_KEY);
+  } catch {
+    return;
+  }
+}
+
+async function abrirLojaInicial(
+  client: SupabaseClient,
+  preferredSegment: SegmentId,
+): Promise<Workspace> {
+  if (lojaWhatsappEscolhida()) {
+    try {
+      return await abrirLojaWhatsapp(client);
+    } catch {
+      lembrarLojaWhatsapp(false);
+    }
+  }
+  return openWorkspace(client, preferredSegment);
+}
 
 interface CloudConnection {
   client: SupabaseClient;
@@ -396,7 +437,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const client = getSupabaseClient(config);
       try {
         await ensureAnonymousSession(client);
-        const workspace = await openWorkspace(client, preferredSegment);
+        const workspace = await abrirLojaInicial(client, preferredSegment);
         cloudRef.current = {
           client,
           businessId: workspace.business.id,
@@ -1628,6 +1669,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [state.segmentId]);
 
+  const entrarNaLojaWhatsapp = useCallback(async (): Promise<void> => {
+    const active = cloudRef.current;
+    if (!active) {
+      throw new Error("Conecte à nuvem para abrir a loja do WhatsApp.");
+    }
+
+    try {
+      const workspace = await abrirLojaWhatsapp(active.client);
+      cloudRef.current = {
+        client: active.client,
+        businessId: workspace.business.id,
+      };
+      lembrarLojaWhatsapp(true);
+      setCloudBusiness(workspace.business);
+      setState(workspace.state);
+      setCloudMessage(null);
+    } catch (error) {
+      setCloudMessage(describeCloudError(error));
+      throw error;
+    }
+  }, []);
+
+  const voltarParaMinhaLoja = useCallback(async (): Promise<void> => {
+    const active = cloudRef.current;
+    if (!active) return;
+
+    try {
+      const workspace = await openWorkspace(active.client, state.segmentId);
+      cloudRef.current = {
+        client: active.client,
+        businessId: workspace.business.id,
+      };
+      lembrarLojaWhatsapp(false);
+      setCloudBusiness(workspace.business);
+      setState(workspace.state);
+      setCloudMessage(null);
+    } catch (error) {
+      setCloudMessage(describeCloudError(error));
+      throw error;
+    }
+  }, [state.segmentId]);
+
+  const carregarWhatsapp = useCallback(async (): Promise<DadosWhatsapp> => {
+    const active = cloudRef.current;
+    if (!active) return { movimentos: [], ofertas: [] };
+    return carregarDadosWhatsapp(active.client, active.businessId);
+  }, []);
+
   const createAudioDraft = useCallback(
     async (input: AudioDraftInput): Promise<Transaction> => {
       const product = state.products.find(
@@ -1842,6 +1931,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       resetDemo,
       createAudioDraft,
       simulatePending,
+      naLojaWhatsapp: business.id === LOJA_WHATSAPP_ID,
+      entrarNaLojaWhatsapp,
+      voltarParaMinhaLoja,
+      carregarWhatsapp,
     }),
     [
       business,
@@ -1881,6 +1974,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       resetDemo,
       createAudioDraft,
       simulatePending,
+      entrarNaLojaWhatsapp,
+      voltarParaMinhaLoja,
+      carregarWhatsapp,
     ],
   );
 

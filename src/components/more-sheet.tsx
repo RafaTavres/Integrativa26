@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Scissors,
   Shirt,
+  Store,
   TrendingUp,
   Truck,
 } from "lucide-react";
@@ -48,11 +49,36 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
     setSegment,
     simulatePending,
     resetDemo,
+    naLojaWhatsapp,
+    entrarNaLojaWhatsapp,
+    voltarParaMinhaLoja,
   } = useApp();
   const { toast } = useToast();
   const router = useRouter();
   const [confirmReset, setConfirmReset] = useState(false);
-  const [busy, setBusy] = useState<"segment" | "reset" | "audio" | null>(null);
+  const [busy, setBusy] = useState<
+    "segment" | "reset" | "audio" | "loja" | null
+  >(null);
+
+  async function trocarLoja() {
+    if (busy) return;
+    setBusy("loja");
+    try {
+      if (naLojaWhatsapp) {
+        await voltarParaMinhaLoja();
+        toast("Você voltou para a sua loja.");
+      } else {
+        await entrarNaLojaWhatsapp();
+        toast("Loja conectada ao WhatsApp aberta.");
+      }
+      onClose();
+      router.push(naLojaWhatsapp ? "/" : "/whatsapp");
+    } catch {
+      toast("Não conseguimos trocar de loja agora.", "info");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function chooseSegment(segmentId: SegmentId) {
     if (segmentId === segment.id || busy) return;
@@ -154,57 +180,97 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
         </div>
 
         <section>
-          <p className="eyebrow mb-2">Ramo do negócio</p>
-          <div className="space-y-2">
-            {segments.map((item) => {
-              const Icon = SEGMENT_ICONS[item.id];
-              const selected = item.id === segment.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => void chooseSegment(item.id)}
-                  aria-pressed={selected}
-                  disabled={busy !== null}
-                  aria-busy={(busy === "segment" && !selected) || undefined}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-[4px] border p-3 text-left transition-colors disabled:opacity-60",
-                    selected
-                      ? "border-terracotta bg-terracotta-soft"
-                      : "border-line bg-paper hover:border-sand-dark hover:bg-cream",
-                  )}
-                >
-                  <span
+          <p className="eyebrow mb-2">Loja conectada</p>
+          <button
+            type="button"
+            onClick={() => void trocarLoja()}
+            disabled={busy !== null || mode !== "cloud"}
+            aria-busy={busy === "loja" || undefined}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-[4px] border p-3 text-left transition-colors disabled:opacity-60",
+              naLojaWhatsapp
+                ? "border-line bg-paper hover:border-sand-dark hover:bg-cream"
+                : "border-sage/35 bg-sage-soft hover:border-sage",
+            )}
+          >
+            <span className="grid size-10 flex-none place-items-center rounded-[4px] bg-sage text-cream">
+              {naLojaWhatsapp ? (
+                <Store className="size-5" strokeWidth={1.9} />
+              ) : (
+                <MessageCircle className="size-5" strokeWidth={1.9} />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-ink">
+                {busy === "loja"
+                  ? "Abrindo…"
+                  : naLojaWhatsapp
+                    ? "Voltar para a minha loja"
+                    : "Loja de roupa (Conectada no WhatsApp)"}
+              </span>
+              <span className="mt-0.5 block truncate text-xs text-muted">
+                {naLojaWhatsapp
+                  ? "Sai da loja do WhatsApp e abre o seu exemplo"
+                  : "Vendas, compras e ofertas que chegam pelo WhatsApp"}
+              </span>
+            </span>
+          </button>
+        </section>
+
+        {naLojaWhatsapp ? null : (
+          <section>
+            <p className="eyebrow mb-2">Ramo do negócio</p>
+            <div className="space-y-2">
+              {segments.map((item) => {
+                const Icon = SEGMENT_ICONS[item.id];
+                const selected = item.id === segment.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => void chooseSegment(item.id)}
+                    aria-pressed={selected}
+                    disabled={busy !== null}
+                    aria-busy={(busy === "segment" && !selected) || undefined}
                     className={cn(
-                      "grid size-10 flex-none place-items-center rounded-[4px]",
+                      "flex w-full items-center gap-3 rounded-[4px] border p-3 text-left transition-colors disabled:opacity-60",
                       selected
-                        ? "bg-terracotta text-cream"
-                        : "bg-sand text-ink",
+                        ? "border-terracotta bg-terracotta-soft"
+                        : "border-line bg-paper hover:border-sand-dark hover:bg-cream",
                     )}
                   >
-                    <Icon className="size-5" strokeWidth={1.9} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold text-ink">
-                      {item.label}
+                    <span
+                      className={cn(
+                        "grid size-10 flex-none place-items-center rounded-[4px]",
+                        selected
+                          ? "bg-terracotta text-cream"
+                          : "bg-sand text-ink",
+                      )}
+                    >
+                      <Icon className="size-5" strokeWidth={1.9} />
                     </span>
-                    <span className="mt-0.5 block truncate text-xs text-muted">
-                      {item.description}
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-bold text-ink">
+                        {item.label}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted">
+                        {item.description}
+                      </span>
                     </span>
-                  </span>
-                  {selected ? (
-                    <span className="grid size-6 flex-none place-items-center rounded-[3px] bg-terracotta text-cream">
-                      <Check className="size-3.5" strokeWidth={3} />
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[0.6875rem] leading-snug text-muted">
-            Trocar de ramo recomeça os dados deste exemplo.
-          </p>
-        </section>
+                    {selected ? (
+                      <span className="grid size-6 flex-none place-items-center rounded-[3px] bg-terracotta text-cream">
+                        <Check className="size-3.5" strokeWidth={3} />
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[0.6875rem] leading-snug text-muted">
+              Trocar de ramo recomeça os dados deste exemplo.
+            </p>
+          </section>
+        )}
 
         <section>
           <p className="eyebrow mb-2">Atalhos</p>
@@ -253,7 +319,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
             type="button"
             onClick={() => {
               onClose();
-              router.push("/integracoes");
+              router.push(naLojaWhatsapp ? "/whatsapp" : "/integracoes");
             }}
             className="mt-2 flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
           >
@@ -262,15 +328,23 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[0.8125rem] font-bold text-ink">
-                WhatsApp e integrações
+                {naLojaWhatsapp ? "WhatsApp da loja" : "WhatsApp e integrações"}
               </span>
               <span className="mt-0.5 block text-[0.6875rem] text-muted">
-                Prepare o número e veja os canais de entrada
+                {naLojaWhatsapp
+                  ? "Vendas, compras e ofertas que chegaram pelo WhatsApp"
+                  : "Prepare o número e veja os canais de entrada"}
               </span>
             </span>
-            <span className="badge bg-mustard-soft text-mustard-dark">
-              Não conectado
-            </span>
+            {naLojaWhatsapp ? (
+              <span className="badge bg-sage-soft text-sage-dark">
+                Conectado
+              </span>
+            ) : (
+              <span className="badge bg-mustard-soft text-mustard-dark">
+                Não conectado
+              </span>
+            )}
           </button>
         </section>
 
@@ -287,15 +361,17 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
               <Mic className="size-4 text-mustard-dark" strokeWidth={2} />
               {busy === "audio" ? "Enviando…" : "Simular áudio"}
             </button>
-            <button
-              type="button"
-              onClick={() => setConfirmReset(true)}
-              disabled={busy !== null}
-              className="btn btn-secondary h-auto flex-col items-start gap-2 px-3 py-3 text-left text-xs disabled:opacity-60"
-            >
-              <RotateCcw className="size-4 text-muted" strokeWidth={2} />
-              Restaurar exemplo
-            </button>
+            {naLojaWhatsapp ? null : (
+              <button
+                type="button"
+                onClick={() => setConfirmReset(true)}
+                disabled={busy !== null}
+                className="btn btn-secondary h-auto flex-col items-start gap-2 px-3 py-3 text-left text-xs disabled:opacity-60"
+              >
+                <RotateCcw className="size-4 text-muted" strokeWidth={2} />
+                Restaurar exemplo
+              </button>
+            )}
           </div>
 
           {confirmReset ? (
