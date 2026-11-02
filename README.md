@@ -8,6 +8,8 @@ A demo tem três ramos prontos (**confeitaria**, **barbearia** e **loja de roupa
 
 Demo: [`http://localhost:3000`](http://localhost:3000) após rodar o projeto.
 
+Deploy: guia completo em [`DEPLOY.md`](DEPLOY.md) (Vercel, Docker/VPS, Render e Railway).
+
 ---
 
 ## 1. Stack e por que ela foi escolhida
@@ -34,7 +36,7 @@ As credenciais usadas no navegador são apenas a URL do projeto e a chave **publ
 
 ## 2. Como rodar
 
-Requisitos: Node.js 20+ e npm.
+Requisitos: Node.js 20.9+ (recomendado 22, igual ao Docker e ao CI) e npm.
 
 ```bash
 npm install
@@ -68,12 +70,29 @@ Sem essas variáveis o app abre em modo local, com o aviso “Salvo neste navega
 ### Docker
 
 A imagem é multi-stage, roda como usuário sem privilégios e usa a saída
-`standalone` do Next.js (somente o necessário para produção).
+`standalone` do Next.js (somente o necessário para produção). O health check
+usa `GET /api/health`.
 
 ```bash
 docker compose up -d --build     # http://localhost:3000
 docker compose logs -f web       # acompanhar logs
 docker compose down              # parar
+```
+
+No servidor, as credenciais entram por um `.env` (o Compose também aceita
+`.env.local` no desenvolvimento):
+
+```bash
+cp .env.example .env
+chmod 600 .env
+docker compose up -d --build
+```
+
+Variáveis opcionais do Compose:
+
+```bash
+APP_PORT=8080        # porta publicada no host (padrão 3000)
+APP_BIND=127.0.0.1   # só aceita conexão local (use com proxy reverso)
 ```
 
 Para testar em uma URL pública temporária, o Compose já traz um túnel do
@@ -85,19 +104,9 @@ docker compose logs -f tunnel    # mostra a URL *.trycloudflare.com
 ```
 
 A URL do quick tunnel é temporária e muda a cada reinício. Para uma rota
-permanente, crie um túnel nomeado no Cloudflare e use o token:
-
-```bash
-export CLOUDFLARE_TUNNEL_TOKEN="seu-token"
-```
-
-No `compose.yaml`, troque o `command` do serviço `tunnel` por:
-
-```yaml
-command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-```
-
-Não há variáveis obrigatórias: o `compose.yaml` lê o `.env.local` em tempo de execução (`env_file` com `required: false`).
+permanente, crie um túnel nomeado no Cloudflare e troque o `command` do serviço
+`tunnel` por `tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}`.
+Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md).
 
 ---
 
@@ -145,7 +154,9 @@ location.reload();
 ```text
 Dockerfile                  # imagem multi-stage de produção (standalone)
 compose.yaml                # app + túnel opcional do Cloudflare
+DEPLOY.md                   # guia de deploy (Vercel, VPS, Render, Railway)
 .env.example                # modelo das credenciais do Supabase
+.github/workflows/ci.yml    # typecheck, build e imagem Docker no CI
 public/                     # arquivos estáticos
 src/
   app/
@@ -153,6 +164,7 @@ src/
     page.tsx                # rota inicial (home)
     estoque/page.tsx        # rota de estoque
     api/config/route.ts     # entrega URL + chave pública em runtime
+    api/health/route.ts     # health check para Docker e monitoramento
     globals.css             # tokens, componentes utilitários e sheets
   components/
     app-shell.tsx           # moldura responsiva + splash de abertura
@@ -340,9 +352,16 @@ O card abre o mesmo formulário de venda, já pré-preenchido com o que a IA ent
 
 - Persistência real no **Supabase**, com sessão anônima por navegador e RLS por negócio.
 - Fallback automático para `localStorage` quando o Supabase não está configurado ou a conexão falha — a tela avisa qual modo está ativo.
-- Sem upload real de áudio/foto no servidor: a foto é lida no navegador (preview) e o lançamento é salvo com `source_type = image_recognition`; o áudio é simulando com um rascunho de exemplo.
+- Sem upload real de áudio/foto no servidor: a foto é lida no navegador (preview) e o lançamento é salvo com `source_type = image_recognition`; o áudio é simulado com um rascunho de exemplo.
 - Os três ramos usam dados fictícios e trocam o cenário inteiro ao serem selecionados.
 - Sem multiusuário: uma sessão anônima = um negócio. Sair do navegador ou limpar os dados perde a sessão.
+
+### Deploy
+
+- **Vercel** e **Docker** prontos: a imagem multi-stage gera um servidor standalone, roda sem privilégios e expõe health check em `/api/health`.
+- **Configuração em runtime** (`/api/config`): as credenciais entram por variável de ambiente no host, sem rebuild e sem ir para o bundle.
+- **CI** no GitHub Actions valida tipos, build e a imagem Docker a cada push.
+- Passo a passo, HTTPS, backup e checklist em [`DEPLOY.md`](DEPLOY.md).
 
 ### Limitações conscientes
 
@@ -371,6 +390,7 @@ O card abre o mesmo formulário de venda, já pré-preenchido com o que a IA ent
 | `npm run dev` | Ambiente de desenvolvimento. |
 | `npm run build` | Build de produção com Turbopack. |
 | `npm start` | Serve o build de produção. |
+| `npm run typecheck` | Checagem de tipos sem gerar arquivos. |
 
 ---
 

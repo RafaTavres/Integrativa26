@@ -6,17 +6,22 @@ services:
       context: .
       dockerfile: Dockerfile
     image: meu-caixa:latest
+    # No VPS com proxy reverso, use APP_BIND=127.0.0.1 para não expor a porta.
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-3000}:3000"
     # Credenciais ficam fora da imagem: entram no container em tempo de
     # execução. Trocar de projeto Supabase não exige rebuild.
+    # `.env` é o padrão no servidor; `.env.local` continua valendo no dev.
     env_file:
+      - path: .env
+        required: false
       - path: .env.local
         required: false
     environment:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+    init: true
     restart: unless-stopped
     healthcheck:
       test:
@@ -24,7 +29,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s
