@@ -338,6 +338,7 @@ async function findBusinessId(client: SupabaseClient): Promise<string | null> {
   const { data, error } = await client
     .from("memberships")
     .select("business_id, created_at")
+    .neq("business_id", LOJA_WHATSAPP_ID)
     .order("created_at", { ascending: true })
     .limit(1);
 
@@ -800,6 +801,139 @@ export async function replaceWorkspace(
   }
 
   return createWorkspace(client, segmentId);
+}
+
+export const LOJA_WHATSAPP_ID = "1590b256-f558-4f64-9dac-525677f11c56";
+
+export interface MovimentoWhatsapp {
+  id: string;
+  tipo: "venda" | "compra";
+  produto: string;
+  quantidade: number;
+  totalCents: number;
+  fornecedor: string | null;
+  porAudio: boolean;
+  criadoEm: string;
+}
+
+export interface OfertaFornecedor {
+  id: string;
+  fornecedor: string;
+  produto: string;
+  unidade: string | null;
+  precoCents: number;
+  promocao: boolean;
+  validade: string | null;
+  mensagem: string | null;
+  criadoEm: string;
+}
+
+export interface DadosWhatsapp {
+  movimentos: MovimentoWhatsapp[];
+  ofertas: OfertaFornecedor[];
+}
+
+interface MovimentoWhatsappRow {
+  id: string;
+  created_at: string;
+  product_name: string;
+  quantity: number | string;
+  amount_cents?: number;
+  total_cents?: number;
+  supplier_name: string | null;
+  source: string;
+}
+
+interface OfertaFornecedorRow {
+  id: string;
+  created_at: string;
+  supplier_name: string | null;
+  product_name: string | null;
+  unit: string | null;
+  price_cents: number | null;
+  is_promo: boolean | null;
+  valid_until: string | null;
+  raw_message: string | null;
+}
+
+function paraMovimento(
+  row: MovimentoWhatsappRow,
+  tipo: MovimentoWhatsapp["tipo"],
+): MovimentoWhatsapp {
+  return {
+    id: row.id,
+    tipo,
+    produto: row.product_name,
+    quantidade: Number(row.quantity),
+    totalCents: row.amount_cents ?? row.total_cents ?? 0,
+    fornecedor: row.supplier_name,
+    porAudio: row.source === "audio",
+    criadoEm: row.created_at,
+  };
+}
+
+export async function abrirLojaWhatsapp(
+  client: SupabaseClient,
+): Promise<Workspace> {
+  const { error } = await client.rpc("entrar_loja_whatsapp");
+  if (error) {
+    throw toCloudError(error, "Não conseguimos abrir a loja do WhatsApp.");
+  }
+  return loadWorkspace(client, LOJA_WHATSAPP_ID);
+}
+
+export async function carregarDadosWhatsapp(
+  client: SupabaseClient,
+  businessId: string,
+): Promise<DadosWhatsapp> {
+  const [vendas, compras, ofertas] = await Promise.all([
+    client
+      .from("n8n_whatsapp_transactions")
+      .select("id, created_at, product_name, quantity, amount_cents, supplier_name, source")
+      .eq("business_id", businessId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    client
+      .from("n8n_whatsapp_purchases")
+      .select("id, created_at, product_name, quantity, total_cents, supplier_name, source")
+      .eq("business_id", businessId)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    client
+      .from("n8n_providers_group")
+      .select("id, created_at, supplier_name, product_name, unit, price_cents, is_promo, valid_until, raw_message")
+      .eq("business_id", businessId)
+      .order("created_at", { ascending: false })
+      .limit(300),
+  ]);
+
+  const erro = vendas.error ?? compras.error ?? ofertas.error;
+  if (erro) throw toCloudError(erro, "Não conseguimos ler o que veio do WhatsApp.");
+
+  const movimentos = [
+    ...((vendas.data ?? []) as MovimentoWhatsappRow[]).map((row) =>
+      paraMovimento(row, "venda"),
+    ),
+    ...((compras.data ?? []) as MovimentoWhatsappRow[]).map((row) =>
+      paraMovimento(row, "compra"),
+    ),
+  ].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+
+  const listaOfertas = ((ofertas.data ?? []) as OfertaFornecedorRow[])
+    .filter((row) => row.product_name && (row.price_cents ?? 0) > 0)
+    .map((row) => ({
+      id: row.id,
+      fornecedor: row.supplier_name?.trim() || "Fornecedor",
+      produto: row.product_name!.trim(),
+      unidade: row.unit,
+      precoCents: row.price_cents ?? 0,
+      promocao: row.is_promo === true,
+      validade: row.valid_until,
+      mensagem: row.raw_message,
+      criadoEm: row.created_at,
+    }));
+
+  return { movimentos, ofertas: listaOfertas };
 }
 
 // ---------------------------------------------------------------------------
