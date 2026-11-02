@@ -800,7 +800,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const newStock = existing.stock + input.quantity;
         product = {
           ...existing,
-          name: cleanName,
+          // O nome do produto já cadastrado é preservado; a compra só soma
+          // estoque e recalcula o custo médio.
+          name: existing.name,
           stock: newStock,
           costCents: Math.round(
             (existing.stock * existing.costCents + totalCents) / newStock,

@@ -27,7 +27,9 @@ Deploy: guia completo em [`DEPLOY.md`](DEPLOY.md) (Vercel, Docker/VPS, Render e 
 | Fallback | **localStorage** (`estokar:demo:v3`) | Se o Supabase não estiver configurado ou a conexão cair, o app continua funcionando neste navegador. As chaves antigas `meu-caixa:*` são migradas automaticamente. |
 | Backend | **Next.js Route Handlers** (`/api/config`, `/api/health`, `/api/integrations`) | Configuração em runtime, health check e contrato público para os conectores de entrada. |
 | Planilhas | **Parser próprio + `fflate`** | CSV/TSV são lidos no navegador; XLSX é descompactado e interpretado sem planilha externa pesada. |
-| IA futura | **Whisper + Vision + fila/Edge Functions** | Transcrição de áudio, leitura de comprovantes/fotos e importação de WhatsApp sem acoplar a IA ao front-end. |
+| Leitura de foto | **Tesseract.js + WebWorker** | OCR em português roda no próprio aparelho; a imagem não sai do navegador. Worker, núcleo WebAssembly e idioma são servidos pelo app. |
+| Áudio | **MediaRecorder + Web Speech API** | Gravação real e transcrição pt-BR quando o navegador oferece; a pessoa revisa antes de salvar. |
+| Integrações futuras | **WhatsApp/e-mail/QR + `ingestion_events`** | Entrada única para canais externos, sem fingir uma conexão que ainda não existe. |
 
 ### Por que login anônimo?
 
@@ -69,6 +71,14 @@ SUPABASE_ANON_KEY=SUA-CHAVE-PUBLICA
 4. Suba o app. O primeiro acesso cria a sessão anônima, o negócio e os exemplos do ramo.
 
 Sem essas variáveis o app abre em modo local, com o aviso “Salvo neste navegador”. As variáveis não levam o prefixo `NEXT_PUBLIC_`: o servidor as entrega em `/api/config` a cada requisição e a chave não entra no bundle.
+
+### Leitura de foto (OCR)
+
+A foto é lida no navegador com **Tesseract.js**. `npm run dev` e `npm run build` rodam `scripts/prepare-ocr.mjs`, que copia o worker e o núcleo WebAssembly de `node_modules/tesseract.js*` para `public/tesseract`. O idioma português (`public/tesseract/por.traineddata.gz`) é versionado junto do projeto.
+
+- A primeira leitura baixa cerca de 5 MB (worker, um núcleo WebAssembly e o idioma); o navegador cacheia e as próximas são rápidas.
+- Nenhuma imagem sai do aparelho. Não há chamada a serviço de OCR externo.
+- Em produção, o `npm ci` precisa rodar antes do `npm run build` para que os arquivos do Tesseract existam. O Dockerfile e a Vercel já fazem isso.
 
 ### Docker
 
@@ -123,13 +133,13 @@ Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md
 - **Gasto rápido** — descrição, valor e forma de pagamento (opcional).
 - **Fornecedores** — cadastro com telefone, e-mail e observações. A tela de cada fornecedor reúne o que falta pagar, o histórico de compras, os itens comprados e o preço praticado.
 - **Compra de mercadoria** — escolhe fornecedor, item, quantidade e custo unitário. Se for item novo, ele entra no estoque; se existir, o custo é recalculado pela média ponderada. A compra pode ser paga na hora (sai do caixa) ou ficar para pagar (vira conta a pagar).
-- **Compra pela nota** — no detalhe do fornecedor, o botão **Registrar compra pela nota** abre a compra já vinculada a ele, com foto opcional do cupom. Ao cadastrar um fornecedor novo, **Salvar e registrar nota** faz o mesmo em um passo. Com foto, o lançamento fica com `source_type = image_recognition`; sem foto, continua `manual`. A imagem ainda não é enviada ao servidor.
+- **Compra pela nota (fornecedor)** — no detalhe do fornecedor, o botão **Registrar compra pela nota** abre a compra já vinculada a ele, com foto opcional do cupom para guardar o comprovante. Ao cadastrar um fornecedor novo, **Salvar e registrar nota** faz o mesmo em um passo. Com foto, o lançamento fica com `source_type = image_recognition`; sem foto, continua `manual`. A imagem não é enviada ao servidor. Para **ler os dados do cupom automaticamente**, use **Foto da nota** no hub **Registrar**.
 - **Integrações** — a rota `/integracoes` mostra o WhatsApp como **não conectado**, com todas as letras, e permite salvar o número e as regras de entrada neste navegador (`estokar:whatsapp:v1`). Também lista o que já funciona (planilha, foto, áudio) e o que está em preparação (e-mail/XML, QR Code). Nenhuma conexão é simulada.
 - **Contas a pagar** — criadas por compra a prazo ou manualmente. O caixa **só muda no dia do pagamento**. A previsão agrupa vencidas, próximos 7 dias e “mais para frente”.
 - **Retirada** — dinheiro que você tira do caixa para uso pessoal. Entra em “Saiu” e no extrato com o rótulo **retirada**, mas não é despesa do negócio nem conta a pagar.
 - **Importar planilha** — CSV, TSV ou XLSX com vendas, gastos, compras, contas e retiradas. Mostra prévia, valida linha por linha e não mexe no estoque atual. As compras importadas alimentam o histórico de preços por fornecedor.
 - **Análises** — previsão de pagamento, comparação de preço do mesmo item entre fornecedores, itens encalhados com o valor parado e resumo de retiradas.
-- **Foto da nota** — anexa cupom/comprovante, escolhe se é venda ou compra, confirma produto, valor e pagamento, e salva com `source_type = image_recognition`. O preview fica só no navegador: nesta versão o arquivo não é enviado ao servidor.
+- **Foto da nota** — tira ou escolhe a foto do cupom/comprovante; o app lê o texto no próprio aparelho com **Tesseract.js em português**, separa fornecedor, itens, quantidade, custo, total, data, CNPJ e forma de pagamento, e **só então** abre a tela de conferência. Você corrige o que precisar, escolhe entre **compra** (entra no estoque e no custo) e **venda** (baixa estoque e entra no caixa) e confirma. A imagem não é enviada nem guardada no servidor; o lançamento fica com `source_type = image_recognition`. Se a leitura não render, **Prefiro digitar sem foto** abre o mesmo formulário vazio e salva como `manual`.
 - **Áudio** — grava de verdade pelo microfone do navegador (`MediaRecorder`), transcreve em português com a Web Speech API quando disponível e permite corrigir o texto. O rascunho nasce como `pending_review` com `source_type = audio_transcription`; o áudio fica só na memória da página e não é enviado ao servidor.
 - **Entrada rápida de estoque** — produto, quantidade e custo. Continua disponível para repor um item sem passar pela compra completa.
 - **Radar de estoque** — produtos no mínimo ou zerados aparecem no topo do extrato e na página de estoque/produtos, com ação direta para repor.
@@ -173,7 +183,9 @@ compose.yaml                # app + túnel opcional do Cloudflare
 DEPLOY.md                   # guia de deploy (Vercel, VPS, Render, Railway)
 .env.example                # modelo das credenciais do Supabase
 .github/workflows/ci.yml    # typecheck, build e imagem Docker no CI
+scripts/prepare-ocr.mjs     # copia worker e núcleo do Tesseract para public/tesseract
 public/                     # arquivos estáticos
+public/tesseract/           # idioma do OCR (worker/núcleo gerados no predev/prebuild)
 src/
   app/
     layout.tsx              # fontes, providers, metadata e viewport
@@ -216,7 +228,7 @@ src/
     sheet.tsx               # bottom sheet mobile / modal central no desktop
     register-sheet.tsx      # hub: venda, gasto, compra, retirada, foto, áudio
     audio-sheet.tsx         # gravação real, transcrição, revisão e rascunho
-    receipt-sheet.tsx       # foto da nota → venda ou compra
+    receipt-sheet.tsx       # foto → OCR local → conferência → compra ou venda
     sale-sheet.tsx          # venda + confirmação de pendente + sucesso
     expense-sheet.tsx
     stock-entry-sheet.tsx
@@ -238,6 +250,7 @@ src/
     integrations.ts         # preferências locais do WhatsApp e exemplos
     audio.ts                # interpreta a transcrição (item, quantidade, valor, pagamento)
     speech.ts               # tipos e detecção da Web Speech API
+    ocr.ts                  # preparação da foto, Tesseract local e parser de cupom
     format.ts               # moeda, datas e saudação
     cn.ts
     supabase/

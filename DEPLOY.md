@@ -12,6 +12,8 @@ O app é **Next.js + Supabase**. Não existe backend próprio além de três rot
 
 Como a configuração é lida a cada requisição, **trocar de projeto Supabase não exige rebuild**.
 
+A leitura de foto roda no navegador com **Tesseract.js**. O `npm run build` copia o worker e o núcleo WebAssembly para `public/tesseract`, e o idioma português (`por.traineddata.gz`) é versionado. Não existe serviço de OCR externo para configurar; a imagem não é enviada ao servidor.
+
 A tela `/integracoes` é servida pelo próprio app e não tem configuração de servidor nesta versão: ela mostra o WhatsApp como **não conectado** e guarda apenas o número e as preferências no `localStorage` do navegador (`estokar:whatsapp:v1`). Nenhuma credencial de WhatsApp existe hoje no projeto.
 
 ---

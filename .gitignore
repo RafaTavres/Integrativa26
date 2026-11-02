@@ -12,3 +12,7 @@ npm-debug.log*
 Thumbs.db
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# Worker e núcleo do OCR são copiados de node_modules no predev/prebuild.
+public/tesseract/worker.min.js
+public/tesseract/core/
