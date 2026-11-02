@@ -107,7 +107,7 @@ const STEPS = [
   },
   {
     title: "Você confere e confirma",
-    detail: "O rascunho aparece na tela inicial. Nada entra no caixa sem revisão.",
+    detail: "O rascunho aparece na tela inicial com valor, item e data para revisão.",
   },
 ];
 
