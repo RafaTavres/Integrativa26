@@ -511,7 +511,7 @@ function parseItems(lines: string[]): ParsedItem[] {
     // Linha só com quantidade e preço, sem nome. Usa o nome da linha anterior.
     if (pendingName) {
       const leadingQuantity = new RegExp(
-        `^(${QUANTITY_SOURCE})(?![\\d.,])\\s*${UNIT_SOURCE}\\s*(x|×|@)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})(?:\\s*(?:=|→)\\s*(?:R\\$\\s*)?(${MONEY_SOURCE}))?$`,
+        `^(${QUANTITY_SOURCE})(?![\\d.,])\\s*${UNIT_SOURCE}\\s*(x|×|@)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})(?:\\s*(?:=|→)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE}))?$`,
         "i",
       ).exec(line);
 
