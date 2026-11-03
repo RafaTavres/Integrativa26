@@ -121,6 +121,7 @@ export interface Business {
   ownerName: string;
   city: string;
   segment: SegmentId;
+  demoSeeded?: boolean;
 }
 
 export interface DemoState {

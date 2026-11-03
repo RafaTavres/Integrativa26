@@ -93,7 +93,7 @@ function TransactionRow({ transaction }: { transaction: Transaction }) {
 }
 
 export function ActivityFeed() {
-  const { transactions, lowStockProducts } = useApp();
+  const { transactions, lowStockProducts, readOnly, naLojaWhatsapp } = useApp();
   const { openSale } = useActions();
   const [expanded, setExpanded] = useState(false);
 
@@ -200,15 +200,21 @@ export function ActivityFeed() {
               Nada por aqui ainda
             </h3>
             <p className="mx-auto mt-1 max-w-[18rem] text-xs leading-relaxed text-muted">
-              Registre a primeira venda para começar.
+              {readOnly
+                ? naLojaWhatsapp
+                  ? "Esta demonstração não tem movimentações próprias."
+                  : "Sem conexão para carregar as movimentações."
+                : "Registre a primeira venda para começar."}
             </p>
-            <button
-              type="button"
-              onClick={openSale}
-              className="btn btn-primary mt-4"
-            >
-              Registrar venda
-            </button>
+            {readOnly ? null : (
+              <button
+                type="button"
+                onClick={openSale}
+                className="btn btn-primary mt-4"
+              >
+                Registrar venda
+              </button>
+            )}
           </div>
         ) : null}
 

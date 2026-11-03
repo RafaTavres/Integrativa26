@@ -63,6 +63,7 @@ import type {
 } from "./types";
 
 const STORAGE_KEY = "estokar:demo:v3";
+const CLOUD_CACHE_KEY = "estokar:cloud:v1";
 // Chaves do nome antigo, migradas na primeira leitura.
 const LEGACY_STORAGE_KEYS = [
   "meu-caixa:demo:v3",
@@ -185,6 +186,8 @@ interface AppContextValue {
   cloudStatus: CloudStatus;
   cloudMessage: string | null;
   ready: boolean;
+  /** Bloqueia escritas na demo e quando a nuvem está fora do ar. */
+  readOnly: boolean;
   retryCloud: () => Promise<void>;
   recordSale: (input: SaleInput) => Promise<void>;
   recordExpense: (input: ExpenseInput) => Promise<void>;
@@ -262,6 +265,22 @@ async function abrirLojaInicial(
 interface CloudConnection {
   client: SupabaseClient;
   businessId: string;
+}
+
+function ensureWritable(
+  active: CloudConnection | null,
+  status: CloudStatus,
+): void {
+  if (active?.businessId === LOJA_WHATSAPP_ID) {
+    throw new CloudError(
+      "Esta é a loja de demonstração. Volte para a sua loja para registrar.",
+    );
+  }
+  if (status === "error") {
+    throw new CloudError(
+      "Sem conexão com a nuvem. Para não perder dados, o app está somente leitura até reconectar.",
+    );
+  }
 }
 
 interface LegacyDemoState {
@@ -401,13 +420,52 @@ function readStoredState(): DemoState | null {
   }
 }
 
+interface CloudCache {
+  savedAt: string;
+  business: Business;
+  state: DemoState;
+}
+
+function isBusiness(value: unknown): value is Business {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<Business>;
+  return (
+    typeof row.id === "string" &&
+    typeof row.name === "string" &&
+    typeof row.ownerName === "string" &&
+    typeof row.city === "string" &&
+    typeof row.segment === "string" &&
+    isSegmentId(row.segment)
+  );
+}
+
+function readCloudCache(): CloudCache | null {
+  try {
+    const raw = window.localStorage.getItem(CLOUD_CACHE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const cache = parsed as Partial<CloudCache>;
+    if (
+      typeof cache.savedAt !== "string" ||
+      !isBusiness(cache.business) ||
+      !isDemoState(cache.state)
+    ) {
+      return null;
+    }
+    return cache as CloudCache;
+  } catch {
+    return null;
+  }
+}
+
 function describeCloudError(error: unknown): string {
   if (error instanceof CloudError) {
     if (error.authFailure === "anonymous_disabled") {
       return "O login anônimo está desativado no Supabase. Ative em Authentication → Sign In / Providers → Anonymous.";
     }
     if (error.authFailure === "network") {
-      return "Sem conexão com o Supabase agora. Os dados ficam neste navegador até a conexão voltar.";
+      return "Sem conexão com o Supabase agora. Seus últimos dados salvos continuam disponíveis, mas novos registros ficam bloqueados até reconectar.";
     }
     return error.message;
   }
@@ -425,7 +483,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   const cloudRef = useRef<CloudConnection | null>(null);
+  const cloudStatusRef = useRef<CloudStatus>("off");
   const bootRef = useRef<Promise<void> | null>(null);
+
+  useEffect(() => {
+    cloudStatusRef.current = cloudStatus;
+  }, [cloudStatus]);
 
   const refresh = useCallback(async (): Promise<Workspace | null> => {
     const active = cloudRef.current;
@@ -477,13 +540,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // abrir duas sessões e criar dois negócios.
     if (!bootRef.current) {
       bootRef.current = (async () => {
+        const cached = readCloudCache();
         const stored = readStoredState();
-        if (stored) setState(stored);
+        if (cached) {
+          setState(cached.state);
+          setCloudBusiness(cached.business);
+        } else if (stored) {
+          setState(stored);
+        }
 
         const connected = await connectCloud(
-          stored?.segmentId ?? "confeitaria",
+          cached?.state.segmentId ?? stored?.segmentId ?? "confeitaria",
         );
-        if (!connected && !stored) {
+        if (!connected && !cached && !stored) {
           setState(createSeedState("confeitaria"));
         }
         setReady(true);
@@ -493,8 +562,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void bootRef.current;
   }, [connectCloud]);
 
-  // No modo local os dados continuam no navegador. No modo nuvem quem manda
-  // é o Supabase, então não sobrescrevemos o cache com dados antigos.
+  // No modo local os dados continuam no navegador. No modo nuvem guardamos um
+  // retrato somente leitura para abrir o app mesmo se o Supabase estiver fora.
   useEffect(() => {
     if (!ready || cloudRef.current) return;
     try {
@@ -503,6 +572,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // Modo privado ou storage cheio: o app continua funcionando só na sessão.
     }
   }, [state, ready]);
+
+  useEffect(() => {
+    if (!ready || cloudStatus !== "ready" || !cloudBusiness) return;
+    try {
+      const cache: CloudCache = {
+        savedAt: new Date().toISOString(),
+        business: cloudBusiness,
+        state,
+      };
+      window.localStorage.setItem(CLOUD_CACHE_KEY, JSON.stringify(cache));
+    } catch {
+      // Sem cache local: o app segue usando a nuvem.
+    }
+  }, [state, cloudBusiness, cloudStatus, ready]);
 
   const retryCloud = useCallback(async () => {
     const connected = await connectCloud(state.segmentId);
@@ -514,6 +597,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const recordSale = useCallback(
     async (input: SaleInput): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const product = state.products.find((item) => item.id === input.productId);
       if (!product) throw new Error("Produto não encontrado.");
       if (input.quantity < 1) throw new Error("Informe a quantidade.");
@@ -588,6 +672,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const recordExpense = useCallback(
     async (input: ExpenseInput): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const description = input.description.trim();
       if (!description) throw new Error("Diga o que foi o gasto.");
       if (input.amountCents < 1) throw new Error("Informe um valor válido.");
@@ -629,6 +714,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const recordWithdrawal = useCallback(
     async (input: WithdrawalInput): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const description = input.description.trim();
       if (!description) throw new Error("Diga para que foi a retirada.");
       if (input.amountCents < 1) throw new Error("Informe um valor válido.");
@@ -669,6 +755,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (
       input: StockInput,
     ): Promise<{ product: Product; transaction?: Transaction }> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const cleanName = input.name.trim();
       if (!cleanName) throw new Error("Diga o nome do produto.");
       if (input.quantity < 1) throw new Error("Informe a quantidade.");
@@ -803,6 +890,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const registerPurchase = useCallback(
     async (input: PurchaseInput): Promise<PurchaseResult> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const cleanName = input.productName.trim();
       if (!cleanName) throw new Error("Diga o nome do item comprado.");
       if (input.quantity <= 0) throw new Error("Informe a quantidade.");
@@ -975,6 +1063,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addSupplier = useCallback(
     async (input: SupplierInput): Promise<Supplier> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const name = input.name.trim();
       if (!name) throw new Error("Diga o nome do fornecedor.");
       if (
@@ -1020,6 +1109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateSupplier = useCallback(
     async (supplierId: string, input: SupplierInput): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const name = input.name.trim();
       if (!name) throw new Error("Diga o nome do fornecedor.");
       if (
@@ -1065,6 +1155,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteSupplier = useCallback(
     async (supplierId: string): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const active = cloudRef.current;
       if (active) {
         await removeCloudSupplier(active.client, supplierId);
@@ -1099,6 +1190,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addBill = useCallback(
     async (input: BillInput): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const description = input.description.trim();
       if (!description) throw new Error("Diga o que é a conta.");
       if (input.amountCents < 1) throw new Error("Informe um valor válido.");
@@ -1138,6 +1230,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const payBill = useCallback(
     async (billId: string, paymentMethod: PaymentMethod): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const bill = state.bills.find((item) => item.id === billId);
       if (!bill) throw new Error("Conta não encontrada.");
       if (bill.status !== "open") throw new Error("Esta conta já foi paga.");
@@ -1188,6 +1281,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteBill = useCallback(
     async (billId: string): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const bill = state.bills.find((item) => item.id === billId);
       if (!bill) throw new Error("Conta não encontrada.");
       if (bill.status !== "open") {
@@ -1216,6 +1310,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const importRows = useCallback(
     async (rows: ImportRow[]): Promise<ImportSummary> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const active = cloudRef.current;
       if (active) {
         const summary = await importSpreadsheetRows(
@@ -1468,7 +1563,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         errors: [],
       };
     },
-    [refresh, state.bills, state.products, state.purchases, state.suppliers, state.transactions],
+    [
+      refresh,
+      state.bills,
+      state.inventoryLogs,
+      state.products,
+      state.purchases,
+      state.suppliers,
+      state.transactions,
+    ],
   );
 
   const loadPendingEmails = useCallback(async (): Promise<
@@ -1481,6 +1584,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const markEmailProcessed = useCallback(
     async (eventId: string): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const active = cloudRef.current;
       if (!active) return;
       await markEmailImportProcessed(active.client, active.businessId, eventId);
@@ -1490,6 +1594,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const reviewPending = useCallback(
     async (input: ReviewInput): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const pending = state.transactions.find(
         (transaction) =>
           transaction.id === input.transactionId &&
@@ -1567,6 +1672,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const discardPending = useCallback(
     async (transactionId: string): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const active = cloudRef.current;
       if (active) {
         await removeTransaction(active.client, transactionId);
@@ -1593,6 +1699,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       productId: string,
       input: { name: string; priceCents: number; minStock: number },
     ): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const cleanName = input.name.trim();
       if (!cleanName) throw new Error("Diga o nome do produto.");
 
@@ -1627,6 +1734,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setProductSupplier = useCallback(
     async (productId: string, supplierId?: string): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const active = cloudRef.current;
       if (active) {
         await setCloudProductSupplier(
@@ -1652,6 +1760,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteTransaction = useCallback(
     async (transactionId: string): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const active = cloudRef.current;
       if (active) {
         await removeTransaction(active.client, transactionId);
@@ -1718,6 +1827,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setSegment = useCallback(
     async (segmentId: SegmentId): Promise<void> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const active = cloudRef.current;
       if (!active) {
         setState(createSeedState(segmentId));
@@ -1746,6 +1856,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const resetDemo = useCallback(async (): Promise<void> => {
+    ensureWritable(cloudRef.current, cloudStatusRef.current);
     const active = cloudRef.current;
     if (!active) {
       setState((previous) => createSeedState(previous.segmentId));
@@ -1821,6 +1932,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const createAudioDraft = useCallback(
     async (input: AudioDraftInput): Promise<Transaction> => {
+      ensureWritable(cloudRef.current, cloudStatusRef.current);
       const product = state.products.find(
         (item) => item.id === input.productId,
       );
@@ -1889,6 +2001,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const simulatePending = useCallback(async (): Promise<Transaction | null> => {
+    ensureWritable(cloudRef.current, cloudStatusRef.current);
     const segment = SEGMENTS[state.segmentId];
     const preferredId = `${state.segmentId}-${segment.pending.productKey}`;
     const available = state.products.filter(
@@ -1989,6 +2102,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [cloudBusiness, state.segmentId],
   );
 
+  const readOnly =
+    cloudStatus === "error" || business.id === LOJA_WHATSAPP_ID;
+
   const value = useMemo<AppContextValue>(
     () => ({
       business,
@@ -2011,6 +2127,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cloudStatus,
       cloudMessage,
       ready,
+      readOnly,
       retryCloud,
       recordSale,
       recordExpense,
@@ -2056,6 +2173,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cloudStatus,
       cloudMessage,
       ready,
+      readOnly,
       retryCloud,
       recordSale,
       recordExpense,

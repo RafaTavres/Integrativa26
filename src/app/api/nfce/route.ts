@@ -3,13 +3,64 @@ import {
   parseNfceQrCode,
 } from "@/lib/nfce";
 import { parseNfceHtml } from "@/lib/nfce-html";
+import { rateLimit, requestKey } from "@/lib/rate-limit";
 
 // A consulta é feita no servidor porque o portal da SEFAZ não libera CORS
 // para o navegador. A URL só pode apontar para portais fiscais .gov.br.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
+
+const MAX_REDIRECTS = 3;
+const MAX_HTML_BYTES = 2_000_000;
+
+async function fetchNfce(url: string): Promise<Response> {
+  let current = url;
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    const response = await fetch(current, {
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        "accept-language": "pt-BR,pt;q=0.9",
+        "user-agent":
+          "Mozilla/5.0 (compatible; Estokar/1.0; +https://github.com/RafaTavres/Integrativa26)",
+      },
+      redirect: "manual",
+      cache: "no-store",
+      signal: AbortSignal.timeout(12000),
+    });
+
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) return response;
+      const next = new URL(location, current);
+      if (!isAllowedNfceUrl(next)) {
+        throw new RedirectError();
+      }
+      current = next.toString();
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new RedirectError();
+}
+
+class RedirectError extends Error {}
 
 export async function POST(request: Request) {
+  const limited = rateLimit(`nfce:${requestKey(request)}`, 20, 60_000);
+  if (!limited.ok) {
+    return Response.json(
+      { error: "Muitas consultas em pouco tempo. Tente de novo em instantes." },
+      {
+        status: 429,
+        headers: { "retry-after": String(limited.retryAfter) },
+      },
+    );
+  }
+
   const body = (await request.json().catch(() => null)) as {
     url?: unknown;
   } | null;
@@ -24,17 +75,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const response = await fetch(parsed.url, {
-      headers: {
-        accept: "text/html,application/xhtml+xml",
-        "accept-language": "pt-BR,pt;q=0.9",
-        "user-agent":
-          "Mozilla/5.0 (compatible; Estokar/1.0; +https://github.com/RafaTavres/Integrativa26)",
-      },
-      redirect: "follow",
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    });
+    const response = await fetchNfce(parsed.url);
 
     if (!response.ok) {
       return Response.json(
@@ -45,7 +86,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const finalUrl = new URL(response.url);
+    const finalUrl = new URL(response.url || parsed.url);
     if (!isAllowedNfceUrl(finalUrl)) {
       return Response.json(
         { error: "A consulta foi redirecionada para um endereço não permitido." },
@@ -53,8 +94,16 @@ export async function POST(request: Request) {
       );
     }
 
+    const declared = Number(response.headers.get("content-length") ?? "0");
+    if (declared > MAX_HTML_BYTES) {
+      return Response.json(
+        { error: "A página da nota é grande demais para ler agora." },
+        { status: 422 },
+      );
+    }
+
     const html = await response.text();
-    if (html.length > 2_000_000) {
+    if (html.length > MAX_HTML_BYTES) {
       return Response.json(
         { error: "A página da nota é grande demais para ler agora." },
         { status: 422 },
@@ -80,6 +129,12 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
+    if (error instanceof RedirectError) {
+      return Response.json(
+        { error: "A consulta foi redirecionada para um endereço não permitido." },
+        { status: 400 },
+      );
+    }
     const timeout =
       error instanceof DOMException && error.name === "TimeoutError";
     return Response.json(

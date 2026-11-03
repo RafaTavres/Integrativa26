@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { SaleSheet } from "./sale-sheet";
 import { ExpenseSheet } from "./expense-sheet";
 import { StockEntrySheet } from "./stock-entry-sheet";
@@ -15,14 +9,24 @@ import { TransactionDetailSheet } from "./transaction-detail-sheet";
 import { ProductEditSheet } from "./product-edit-sheet";
 import { MoreSheet } from "./more-sheet";
 import { RegisterSheet } from "./register-sheet";
-import { ReceiptSheet } from "./receipt-sheet";
 import { SupplierSheet } from "./supplier-sheet";
 import { SupplierDetailSheet } from "./supplier-detail-sheet";
-import { PurchaseSheet } from "./purchase-sheet";
 import { WithdrawalSheet } from "./withdrawal-sheet";
 import { BillSheet } from "./bill-sheet";
 import { BillPaySheet } from "./bill-pay-sheet";
-import { AudioSheet } from "./audio-sheet";
+
+const ReceiptSheet = dynamic(
+  () => import("./receipt-sheet").then((module) => module.ReceiptSheet),
+  { ssr: false },
+);
+const AudioSheet = dynamic(
+  () => import("./audio-sheet").then((module) => module.AudioSheet),
+  { ssr: false },
+);
+const PurchaseSheet = dynamic(
+  () => import("./purchase-sheet").then((module) => module.PurchaseSheet),
+  { ssr: false },
+);
 
 type SheetState =
   | { type: "none" }

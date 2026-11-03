@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Boxes,
   ChevronDown,
+  Eye,
   Home,
   MoreHorizontal,
   Plus,
@@ -20,7 +21,7 @@ import { cn } from "@/lib/cn";
 
 export function TopBar() {
   const pathname = usePathname();
-  const { business, segment } = useApp();
+  const { business, segment, readOnly } = useApp();
   const { openMore, openRegister } = useActions();
 
   const navItems = [
@@ -64,14 +65,16 @@ export function TopBar() {
         </div>
 
         <div className="flex flex-none items-center gap-2">
-          <button
-            type="button"
-            onClick={openRegister}
-            className="btn btn-primary hidden h-9 px-3.5 text-[0.8125rem] lg:inline-flex"
-          >
-            <Plus className="size-4" strokeWidth={2.4} />
-            Registrar
-          </button>
+          {readOnly ? null : (
+            <button
+              type="button"
+              onClick={openRegister}
+              className="btn btn-primary hidden h-9 px-3.5 text-[0.8125rem] lg:inline-flex"
+            >
+              <Plus className="size-4" strokeWidth={2.4} />
+              Registrar
+            </button>
+          )}
           <button
             type="button"
             onClick={openMore}
@@ -100,7 +103,7 @@ export function TopBar() {
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { segment } = useApp();
+  const { segment, readOnly } = useApp();
   const { openRegister, openMore } = useActions();
 
   const leftItem = { href: "/", label: "Início", icon: Home };
@@ -121,7 +124,7 @@ export function BottomNav() {
           href={leftItem.href}
           aria-current={pathname === "/" ? "page" : undefined}
           className={cn(
-            "flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.625rem] font-semibold transition-colors",
+            "flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.6875rem] font-semibold transition-colors",
             pathname === "/" ? "text-ink" : "text-muted",
           )}
         >
@@ -140,7 +143,7 @@ export function BottomNav() {
           href={billsItem.href}
           aria-current={pathname.startsWith(billsItem.href) ? "page" : undefined}
           className={cn(
-            "flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.625rem] font-semibold transition-colors",
+            "flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.6875rem] font-semibold transition-colors",
             pathname.startsWith(billsItem.href) ? "text-ink" : "text-muted",
           )}
         >
@@ -158,19 +161,24 @@ export function BottomNav() {
         <button
           type="button"
           onClick={openRegister}
-          className="mx-auto flex flex-col items-center gap-1 rounded-[4px] text-[0.625rem] font-bold text-ink"
+          disabled={readOnly}
+          className="mx-auto flex flex-col items-center gap-1 rounded-[4px] text-[0.6875rem] font-bold text-ink disabled:cursor-default disabled:opacity-70"
         >
           <span className="grid h-9 w-16 place-items-center rounded-[4px] border-b-[3px] border-terracotta-dark bg-terracotta text-cream">
-            <Plus className="size-5" strokeWidth={2.6} />
+            {readOnly ? (
+              <Eye className="size-5" strokeWidth={2.2} />
+            ) : (
+              <Plus className="size-5" strokeWidth={2.6} />
+            )}
           </span>
-          Registrar
+          {readOnly ? "Demo" : "Registrar"}
         </button>
 
         <Link
           href={rightItem.href}
           aria-current={pathname.startsWith(rightItem.href) ? "page" : undefined}
           className={cn(
-            "flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.625rem] font-semibold transition-colors",
+            "flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.6875rem] font-semibold transition-colors",
             pathname.startsWith(rightItem.href) ? "text-ink" : "text-muted",
           )}
         >
@@ -188,7 +196,7 @@ export function BottomNav() {
         <button
           type="button"
           onClick={openMore}
-          className="flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.625rem] font-semibold text-muted transition-colors hover:text-ink"
+          className="flex flex-col items-center gap-1 rounded-[4px] py-1 text-[0.6875rem] font-semibold text-muted transition-colors hover:text-ink"
         >
           <span className="grid h-7 w-10 place-items-center rounded-[3px]">
             <MoreHorizontal className="size-[1.15rem]" strokeWidth={2} />

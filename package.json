@@ -4,7 +4,7 @@
   "private": true,
   "description": "Gestor Inteligente de Pequenos Negócios — fricção zero para MEIs.",
   "engines": {
-    "node": ">=20.9.0"
+    "node": ">=20.19.0"
   },
   "scripts": {
     "predev": "node scripts/prepare-ocr.mjs",
@@ -12,7 +12,10 @@
     "prebuild": "node scripts/prepare-ocr.mjs",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource-variable/figtree": "^5.3.0",
@@ -34,8 +37,11 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.4",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.3.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
   }
 }

@@ -184,10 +184,6 @@ function cleanLine(line: string): string {
     .trim();
 }
 
-function onlyDigits(value: string): string {
-  return value.replace(/\D/g, "");
-}
-
 /**
  * Corrige confusões comuns do OCR em trechos numéricos:
  * 1O,5O -> 10,50 / 5S,OO -> 55,00. Só age em tokens com dígitos.

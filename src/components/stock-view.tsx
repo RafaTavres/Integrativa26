@@ -8,7 +8,7 @@ import { formatBRL } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
 export function StockView() {
-  const { products, lowStockProducts, segment } = useApp();
+  const { products, lowStockProducts, segment, readOnly } = useApp();
   const { openStock, openEditProduct } = useActions();
 
   const tracked = useMemo(
@@ -40,14 +40,16 @@ export function StockView() {
             {lowStockProducts.length === 1 ? "para repor" : "para repor"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => openStock()}
-          className="btn btn-primary h-11 w-full sm:w-auto"
-        >
-          <PackagePlus className="size-[1.1rem]" strokeWidth={2.2} />
-          Adicionar
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={() => openStock()}
+            className="btn btn-primary h-11 w-full sm:w-auto"
+          >
+            <PackagePlus className="size-[1.1rem]" strokeWidth={2.2} />
+            Adicionar
+          </button>
+        )}
       </header>
 
       <section aria-labelledby="products-title" className="mt-6">
@@ -64,14 +66,16 @@ export function StockView() {
             <p className="mx-auto mt-1 max-w-[20rem] text-xs leading-relaxed text-muted">
               Adicione o que você vende para acompanhar o estoque.
             </p>
-            <button
-              type="button"
-              onClick={() => openStock()}
-              className="btn btn-primary mt-4"
-            >
-              <Plus className="size-4" strokeWidth={2.4} />
-              Adicionar item
-            </button>
+            {readOnly ? null : (
+              <button
+                type="button"
+                onClick={() => openStock()}
+                className="btn btn-primary mt-4"
+              >
+                <Plus className="size-4" strokeWidth={2.4} />
+                Adicionar item
+              </button>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-line rounded-[4px] border border-line bg-paper">
@@ -122,17 +126,19 @@ export function StockView() {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => openStock(product.id)}
-                    className={cn(
-                      "btn h-8 flex-none px-2.5 text-[0.6875rem]",
-                      isLow ? "btn-primary" : "btn-secondary",
-                    )}
-                  >
-                    <Plus className="size-3.5" strokeWidth={2.5} />
-                    Repor
-                  </button>
+                  {readOnly ? null : (
+                    <button
+                      type="button"
+                      onClick={() => openStock(product.id)}
+                      className={cn(
+                        "btn h-8 flex-none px-2.5 text-[0.6875rem]",
+                        isLow ? "btn-primary" : "btn-secondary",
+                      )}
+                    >
+                      <Plus className="size-3.5" strokeWidth={2.5} />
+                      Repor
+                    </button>
+                  )}
                 </div>
               );
             })}

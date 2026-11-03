@@ -23,6 +23,8 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
       # As credenciais do Supabase são lidas em runtime (/api/config), então o
       # build roda sem secrets.
       - run: npm run build

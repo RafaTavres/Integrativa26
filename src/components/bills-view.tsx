@@ -22,7 +22,7 @@ import { cn } from "@/lib/cn";
 import type { Bill } from "@/lib/types";
 
 function BillRow({ bill }: { bill: Bill }) {
-  const { suppliers, deleteBill } = useApp();
+  const { suppliers, deleteBill, readOnly } = useApp();
   const { openPayBill } = useActions();
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
@@ -68,21 +68,25 @@ function BillRow({ bill }: { bill: Bill }) {
         >
           {formatBRL(bill.amountCents)}
         </span>
-        <button
-          type="button"
-          onClick={() => openPayBill(bill.id)}
-          className="btn btn-secondary h-8 flex-none px-2.5 text-[0.6875rem]"
-        >
-          Pagar
-        </button>
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          aria-label={`Apagar ${bill.description}`}
-          className="grid size-8 flex-none place-items-center rounded-[3px] text-muted transition-colors hover:bg-cream hover:text-terracotta-dark"
-        >
-          <Trash2 className="size-3.5" strokeWidth={2} />
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={() => openPayBill(bill.id)}
+            className="btn btn-secondary h-8 flex-none px-2.5 text-[0.6875rem]"
+          >
+            Pagar
+          </button>
+        )}
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            aria-label={`Apagar ${bill.description}`}
+            className="grid size-8 flex-none place-items-center rounded-[3px] text-muted transition-colors hover:bg-cream hover:text-terracotta-dark"
+          >
+            <Trash2 className="size-3.5" strokeWidth={2} />
+          </button>
+        )}
       </div>
 
       {confirming ? (
@@ -114,7 +118,7 @@ function BillRow({ bill }: { bill: Bill }) {
 }
 
 export function BillsView() {
-  const { bills, suppliers } = useApp();
+  const { bills, suppliers, readOnly } = useApp();
   const { openBill, openTransaction } = useActions();
   const [showPaid, setShowPaid] = useState(false);
 
@@ -180,14 +184,16 @@ export function BillsView() {
             O caixa só muda quando você paga.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => openBill()}
-          className="btn btn-primary h-11 px-4 text-sm"
-        >
-          <Plus className="size-4" strokeWidth={2.4} />
-          Nova conta
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={() => openBill()}
+            className="btn btn-primary h-11 px-4 text-sm"
+          >
+            <Plus className="size-4" strokeWidth={2.4} />
+            Nova conta
+          </button>
+        )}
       </header>
 
       <div className="animate-rise mt-5 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-[4px] border border-line bg-paper px-3 py-2.5 text-[0.75rem] text-muted">
@@ -255,14 +261,16 @@ export function BillsView() {
           <p className="mt-1 text-xs text-muted">
             Quando comprar a prazo, ela aparece aqui.
           </p>
-          <button
-            type="button"
-            onClick={() => openBill()}
-            className="btn btn-primary mt-3 h-10 px-4 text-xs"
-          >
-            <Plus className="size-3.5" strokeWidth={2.4} />
-            Adicionar conta
-          </button>
+          {readOnly ? null : (
+            <button
+              type="button"
+              onClick={() => openBill()}
+              className="btn btn-primary mt-3 h-10 px-4 text-xs"
+            >
+              <Plus className="size-3.5" strokeWidth={2.4} />
+              Adicionar conta
+            </button>
+          )}
         </div>
       )}
 

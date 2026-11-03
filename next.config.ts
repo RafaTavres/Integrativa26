@@ -8,6 +8,25 @@ const nextConfig: NextConfig = {
   // Bibliotecas de IMAP usam sockets/TLS do Node; não devem ser empacotadas
   // no bundle do navegador.
   serverExternalPackages: ["imapflow", "mailparser"],
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          { key: "X-Frame-Options", value: "DENY" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(self), microphone=(self), geolocation=()",
+          },
+        ],
+      },
+    ];
+  },
   ...(process.env.NEXT_OUTPUT === "standalone"
     ? { output: "standalone" as const }
     : {}),

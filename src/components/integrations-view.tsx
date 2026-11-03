@@ -305,7 +305,7 @@ export function IntegrationsView() {
                   href="/whatsapp"
                   className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
                 >
-                  Ver a loja conectada
+                  Ver a loja de demonstração
                   <ArrowRight className="size-3" strokeWidth={2.4} />
                 </Link>
               </div>

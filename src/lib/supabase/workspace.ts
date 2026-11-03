@@ -85,6 +85,7 @@ interface BusinessRow {
   owner_name: string;
   city: string | null;
   segment: string;
+  demo_seeded?: boolean | null;
 }
 
 interface ProductRow {
@@ -186,6 +187,7 @@ function mapBusiness(row: BusinessRow): Business {
     ownerName: row.owner_name,
     city: row.city ?? "",
     segment: isSegmentId(row.segment) ? row.segment : "confeitaria",
+    demoSeeded: row.demo_seeded === true,
   };
 }
 
@@ -369,7 +371,7 @@ export async function loadWorkspace(
   ] = await Promise.all([
     client
       .from("businesses")
-      .select("id, name, owner_name, city, segment")
+      .select("id, name, owner_name, city, segment, demo_seeded")
       .eq("id", businessId)
       .maybeSingle(),
     client
@@ -747,6 +749,19 @@ async function seedWorkspace(
 // Criação e troca de negócio
 // ---------------------------------------------------------------------------
 
+async function markDemoSeeded(
+  client: SupabaseClient,
+  businessId: string,
+): Promise<void> {
+  const { error } = await client
+    .from("businesses")
+    .update({ demo_seeded: true })
+    .eq("id", businessId);
+  if (error) {
+    throw toCloudError(error, "Não conseguimos concluir a preparação dos exemplos.");
+  }
+}
+
 export async function createWorkspace(
   client: SupabaseClient,
   segmentId: SegmentId,
@@ -766,12 +781,14 @@ export async function createWorkspace(
   }
 
   await seedWorkspace(client, businessId, segmentId, true);
+  await markDemoSeeded(client, businessId);
   return loadWorkspace(client, businessId);
 }
 
 /**
  * Abre o negócio do usuário. Se ainda não existir, cria já com os itens
- * e lançamentos de exemplo do ramo escolhido.
+ * e lançamentos de exemplo do ramo escolhido. O seed roda uma única vez:
+ * itens apagados de propósito não voltam no próximo acesso.
  */
 export async function openWorkspace(
   client: SupabaseClient,
@@ -781,33 +798,51 @@ export async function openWorkspace(
   if (!businessId) return createWorkspace(client, preferredSegment);
 
   const workspace = await loadWorkspace(client, businessId);
-  // Só completa itens que faltaram em um primeiro carregamento interrompido.
-  // Lançamentos apagados de propósito não voltam.
+  if (workspace.business.demoSeeded) return workspace;
+
+  // Primeiro carregamento interrompido: completa o que faltou e marca.
   await seedWorkspace(client, businessId, workspace.business.segment, false);
+  await markDemoSeeded(client, businessId);
   return loadWorkspace(client, businessId);
 }
 
 /**
- * Troca o ramo recomeçando os dados: apaga o negócio atual (em cascata) e
- * cria outro com os exemplos do novo ramo.
+ * Troca o ramo recomeçando os dados. A limpeza acontece em uma RPC
+ * transacional, sem apagar o negócio/membership da pessoa.
  */
 export async function replaceWorkspace(
   client: SupabaseClient,
   businessId: string,
   segmentId: SegmentId,
 ): Promise<Workspace> {
-  const { data, error } = await client
-    .from("businesses")
-    .delete()
-    .eq("id", businessId)
-    .select("id");
-
-  if (error) throw toCloudError(error, "Não conseguimos recomeçar seu caixa.");
-  if (!data || data.length === 0) {
-    throw new CloudError("Não conseguimos apagar os dados antigos.");
+  const { error } = await client.rpc("reset_business", {
+    p_business_id: businessId,
+    p_segment: segmentId,
+  });
+  if (error) {
+    throw toCloudError(
+      error,
+      "Não conseguimos recomeçar seu caixa. Atualize o schema do Supabase.",
+    );
   }
 
-  return createWorkspace(client, segmentId);
+  // Mantém a mesma identidade que a criação de um negócio novo teria.
+  const segment = SEGMENTS[segmentId];
+  const { error: identityError } = await client
+    .from("businesses")
+    .update({
+      name: segment.businessName,
+      owner_name: segment.ownerName,
+      city: segment.city,
+    })
+    .eq("id", businessId);
+  if (identityError) {
+    throw toCloudError(identityError, "Não conseguimos atualizar o ramo.");
+  }
+
+  await seedWorkspace(client, businessId, segmentId, true);
+  await markDemoSeeded(client, businessId);
+  return loadWorkspace(client, businessId);
 }
 
 export const LOJA_WHATSAPP_ID = "1590b256-f558-4f64-9dac-525677f11c56";
@@ -1147,109 +1182,20 @@ export async function registerStockEntry(
     totalCostCents: number;
   },
 ): Promise<string> {
-  const unitCostCents = Math.round(input.totalCostCents / input.quantity);
-
-  const { data: products, error: productsError } = await client
-    .from("products")
-    .select("id, name, stock, cost_cents, track_stock")
-    .eq("business_id", businessId);
-  if (productsError) {
-    throw toCloudError(productsError, "Não conseguimos consultar os itens.");
-  }
-
-  const rows = (products ?? []) as Array<{
-    id: string;
-    name: string;
-    stock: number | string;
-    cost_cents: number;
-    track_stock: boolean;
-  }>;
-  const cleanName = input.name.trim().toLowerCase();
-  const existing =
-    rows.find((row) => row.id === input.productId && row.track_stock) ??
-    rows.find(
-      (row) => row.track_stock && row.name.trim().toLowerCase() === cleanName,
-    );
-
-  let productId: string;
-
-  if (existing) {
-    const currentStock = toNumber(existing.stock);
-    const newStock = currentStock + input.quantity;
-    const weightedCost = Math.round(
-      (currentStock * toNumber(existing.cost_cents) + input.totalCostCents) /
-        newStock,
-    );
-    const { error } = await client
-      .from("products")
-      .update({
-        name: input.name.trim(),
-        stock: newStock,
-        cost_cents: weightedCost,
-      })
-      .eq("id", existing.id);
-    if (error) throw toCloudError(error, "Não conseguimos dar entrada.");
-    productId = existing.id;
-  } else {
-    const suggestedPrice =
-      unitCostCents > 0
-        ? Math.max(100, Math.ceil((unitCostCents * 1.8) / 100) * 100)
-        : 0;
-    const { data, error } = await client
-      .from("products")
-      .insert({
-        business_id: businessId,
-        name: input.name.trim(),
-        unit: "un",
-        unit_plural: "un",
-        stock: input.quantity,
-        min_stock: 2,
-        cost_cents: unitCostCents,
-        price_cents: suggestedPrice,
-        track_stock: true,
-      })
-      .select("id")
-      .single();
-    if (error) throw toCloudError(error, "Não conseguimos criar o item.");
-    productId = (data as { id: string }).id;
-  }
-
-  let transactionId: string | null = null;
-  if (input.totalCostCents > 0) {
-    const { data, error } = await client
-      .from("transactions")
-      .insert({
-        business_id: businessId,
-        kind: "expense",
-        description: `Compra: ${input.name.trim()}`,
-        amount_cents: input.totalCostCents,
-        payment_method: "other",
-        source_type: "manual",
-        status: "processed",
-      })
-      .select("id")
-      .single();
-    if (error) throw toCloudError(error, "Não conseguimos lançar o gasto.");
-    transactionId = (data as { id: string }).id;
-  }
-
-  const { error: logError } = await client.from("inventory_logs").insert({
-    business_id: businessId,
-    product_id: productId,
-    direction: "in",
-    quantity: input.quantity,
-    unit_cost_cents: unitCostCents,
-    transaction_id: transactionId,
-    source_type: "manual",
-    status: "processed",
+  const { data, error } = await client.rpc("register_stock_entry", {
+    p_business_id: businessId,
+    p_product_id: input.productId ?? null,
+    p_name: input.name.trim(),
+    p_quantity: input.quantity,
+    p_total_cost_cents: input.totalCostCents,
   });
-  if (logError) {
-    throw new CloudError(
-      "A entrada foi salva, mas o histórico de estoque falhou.",
-    );
-  }
+  if (error) throw toCloudError(error, "Não conseguimos dar entrada.");
 
-  return productId;
+  const result = (data ?? {}) as { product_id?: string };
+  if (!result.product_id) {
+    throw new CloudError("O Supabase não devolveu o item atualizado.");
+  }
+  return result.product_id;
 }
 
 export async function registerPurchase(

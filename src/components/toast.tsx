@@ -31,7 +31,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setItems((current) => [...current.slice(-2), { id, message, tone }]);
       window.setTimeout(() => {
         setItems((current) => current.filter((item) => item.id !== id));
-      }, 3600);
+      }, 5000);
     },
     [],
   );

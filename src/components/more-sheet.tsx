@@ -6,6 +6,7 @@ import {
   CakeSlice,
   Cloud,
   CloudOff,
+  Download,
   MessageCircle,
   RefreshCw,
   Scissors,
@@ -16,6 +17,7 @@ import { Sheet } from "./sheet";
 import { useApp } from "@/lib/store";
 import { useToast } from "./toast";
 import { initials } from "@/lib/format";
+import { downloadWorkspaceJson, workspaceExport } from "@/lib/export";
 import { cn } from "@/lib/cn";
 import type { SegmentId } from "@/lib/types";
 
@@ -44,10 +46,18 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
     naLojaWhatsapp,
     entrarNaLojaWhatsapp,
     voltarParaMinhaLoja,
+    readOnly,
+    products,
+    transactions,
+    inventoryLogs,
+    suppliers,
+    purchases,
+    bills,
   } = useApp();
   const { toast } = useToast();
   const router = useRouter();
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmSegment, setConfirmSegment] = useState<SegmentId | null>(null);
   const [busy, setBusy] = useState<
     "segment" | "reset" | "audio" | "loja" | null
   >(null);
@@ -72,12 +82,19 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
     }
   }
 
-  async function chooseSegment(segmentId: SegmentId) {
+  function chooseSegment(segmentId: SegmentId) {
     if (segmentId === segment.id || busy) return;
+    setConfirmSegment(segmentId);
+  }
+
+  async function applySegmentChange() {
+    const segmentId = confirmSegment;
+    if (!segmentId || busy) return;
     const next = segments.find((item) => item.id === segmentId);
     setBusy("segment");
     try {
       await setSegment(segmentId);
+      setConfirmSegment(null);
       onClose();
       router.push("/");
       toast(`Exemplo de ${next?.label.toLowerCase() ?? "loja"} carregado.`);
@@ -85,6 +102,25 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
       toast("Não conseguimos trocar o ramo agora.", "info");
     } finally {
       setBusy(null);
+    }
+  }
+
+  function handleExport() {
+    try {
+      downloadWorkspaceJson(
+        workspaceExport(business, {
+          segmentId: segment.id,
+          products,
+          transactions,
+          inventoryLogs,
+          suppliers,
+          purchases,
+          bills,
+        }),
+      );
+      toast("Backup baixado.");
+    } catch {
+      toast("Não conseguimos gerar o backup.", "info");
     }
   }
 
@@ -127,13 +163,14 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
     }
   }
 
-  const connectionTitle =
-    mode === "cloud"
+  const connectionTitle = naLojaWhatsapp
+    ? "Demonstração somente leitura"
+    : mode === "cloud"
       ? "Salvo na nuvem"
       : cloudStatus === "connecting"
         ? "Conectando…"
         : cloudStatus === "error"
-          ? "Só neste navegador"
+          ? "Somente leitura (offline)"
           : "Salvo neste navegador";
 
   const canRetry =
@@ -187,7 +224,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
           </span>
           {naLojaWhatsapp ? null : (
             <span className="badge flex-none bg-sage-soft text-sage-dark">
-              Conectada
+              Demo n8n
             </span>
           )}
         </button>
@@ -205,7 +242,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
                     type="button"
                     onClick={() => void chooseSegment(item.id)}
                     aria-pressed={selected}
-                    disabled={busy !== null}
+                    disabled={busy !== null || readOnly}
                     aria-busy={(busy === "segment" && !selected) || undefined}
                     className={cn(
                       "flex flex-col items-center gap-1.5 rounded-[4px] border p-2.5 text-center transition-colors disabled:opacity-60",
@@ -228,6 +265,36 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
                 );
               })}
             </div>
+
+            {confirmSegment ? (
+              <div className="animate-rise mt-2 rounded-[4px] border border-terracotta/30 bg-terracotta-soft p-3">
+                <p className="text-sm font-semibold text-ink">
+                  Trocar para {segments.find((item) => item.id === confirmSegment)?.label}?
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  Isso apaga os lançamentos, o estoque e as contas atuais e
+                  recomeça a demonstração com os exemplos do novo ramo.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmSegment(null)}
+                    className="btn btn-secondary h-10 flex-1 text-xs"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void applySegmentChange()}
+                    disabled={busy !== null}
+                    aria-busy={busy === "segment" || undefined}
+                    className="btn h-10 flex-1 bg-terracotta-dark text-xs text-cream disabled:opacity-60"
+                  >
+                    {busy === "segment" ? "Trocando…" : "Apagar e trocar"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         )}
 
@@ -242,7 +309,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
               {
                 label: "WhatsApp e integrações",
                 href: naLojaWhatsapp ? "/whatsapp" : "/integracoes",
-                status: naLojaWhatsapp ? "Conectado" : "Não conectado",
+                status: naLojaWhatsapp ? "Demo n8n" : "Não conectado",
               },
             ].map((item) => (
               <button
@@ -259,7 +326,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
                   <span
                     className={cn(
                       "text-[0.625rem] font-bold",
-                      item.status === "Conectado"
+                      item.status === "Demo n8n"
                         ? "text-sage-dark"
                         : "text-mustard-dark",
                     )}
@@ -272,60 +339,97 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
           </div>
         </section>
 
-        <section>
-          <p className="eyebrow mb-2">Testar</p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] font-semibold text-muted">
+        {naLojaWhatsapp ? null : (
+          <section>
+            <p className="eyebrow mb-2">Seus dados</p>
             <button
               type="button"
-              onClick={() => void handleSimulate()}
-              disabled={busy !== null}
-              className="underline underline-offset-2 hover:text-ink disabled:opacity-60"
+              onClick={handleExport}
+              className="flex w-full items-center gap-3 rounded-[4px] border border-line bg-paper px-3 py-2.5 text-left transition-colors hover:bg-cream"
             >
-              {busy === "audio" ? "Enviando…" : "Simular áudio"}
+              <span className="grid size-8 flex-none place-items-center rounded-[3px] bg-cream text-ink">
+                <Download className="size-4" strokeWidth={2} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[0.8125rem] font-bold text-ink">
+                  Baixar meus dados
+                </span>
+                <span className="mt-0.5 block text-[0.6875rem] text-muted">
+                  Um arquivo JSON com itens, lançamentos e contas.
+                </span>
+              </span>
             </button>
-            {naLojaWhatsapp ? null : (
-              <>
-                <span aria-hidden>·</span>
+            <p className="mt-1.5 text-[0.6875rem] leading-relaxed text-muted">
+              A sessão é deste navegador. Se você limpar os dados do navegador,
+              baixe este backup antes.
+            </p>
+          </section>
+        )}
+
+        <section>
+          <p className="eyebrow mb-2">Testar</p>
+          {readOnly ? (
+            <p className="text-[0.6875rem] leading-relaxed text-muted">
+              {naLojaWhatsapp
+                ? "Esta loja é somente leitura."
+                : "Reconecte para voltar a testar e registrar."}
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] font-semibold text-muted">
                 <button
                   type="button"
-                  onClick={() => setConfirmReset(true)}
+                  onClick={() => void handleSimulate()}
                   disabled={busy !== null}
                   className="underline underline-offset-2 hover:text-ink disabled:opacity-60"
                 >
-                  Restaurar exemplo
+                  {busy === "audio" ? "Enviando…" : "Simular áudio"}
                 </button>
-              </>
-            )}
-          </div>
-
-          {confirmReset ? (
-            <div className="animate-rise mt-2 rounded-[4px] border border-terracotta/30 bg-terracotta-soft p-3">
-              <p className="text-sm font-semibold text-ink">
-                Restaurar os dados?
-              </p>
-              <p className="mt-1 text-xs text-muted">
-                O que você registrou nesta demo será apagado.
-              </p>
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConfirmReset(false)}
-                  className="btn btn-secondary h-10 flex-1 text-xs"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleReset()}
-                  disabled={busy !== null}
-                  aria-busy={busy === "reset" || undefined}
-                  className="btn h-10 flex-1 bg-terracotta-dark text-xs text-cream disabled:opacity-60"
-                >
-                  {busy === "reset" ? "Restaurando…" : "Restaurar"}
-                </button>
+                {naLojaWhatsapp ? null : (
+                  <>
+                    <span aria-hidden>·</span>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(true)}
+                      disabled={busy !== null}
+                      className="underline underline-offset-2 hover:text-ink disabled:opacity-60"
+                    >
+                      Restaurar exemplo
+                    </button>
+                  </>
+                )}
               </div>
-            </div>
-          ) : null}
+
+              {confirmReset ? (
+                <div className="animate-rise mt-2 rounded-[4px] border border-terracotta/30 bg-terracotta-soft p-3">
+                  <p className="text-sm font-semibold text-ink">
+                    Restaurar os dados?
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    O que você registrou nesta demo será apagado.
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmReset(false)}
+                      className="btn btn-secondary h-10 flex-1 text-xs"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleReset()}
+                      disabled={busy !== null}
+                      aria-busy={busy === "reset" || undefined}
+                      className="btn h-10 flex-1 bg-terracotta-dark text-xs text-cream disabled:opacity-60"
+                    >
+                      {busy === "reset" ? "Restaurando…" : "Restaurar"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          )}
         </section>
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-muted">

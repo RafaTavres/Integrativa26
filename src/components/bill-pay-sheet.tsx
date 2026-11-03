@@ -5,7 +5,6 @@ import { ArrowRight, Check, HandCoins, Truck } from "lucide-react";
 import { Sheet } from "./sheet";
 import { PaymentPicker } from "./payment-picker";
 import { useApp } from "@/lib/store";
-import { useToast } from "./toast";
 import { formatBRL } from "@/lib/format";
 import { dueDateLabel } from "@/lib/analytics";
 import type { PaymentMethod } from "@/lib/types";
@@ -17,7 +16,6 @@ interface BillPaySheetProps {
 
 export function BillPaySheet({ billId, onClose }: BillPaySheetProps) {
   const { bills, suppliers, payBill } = useApp();
-  const { toast } = useToast();
   const bill = bills.find((item) => item.id === billId);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(

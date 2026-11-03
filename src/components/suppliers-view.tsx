@@ -8,7 +8,7 @@ import { buildSupplierOverview } from "@/lib/analytics";
 import { formatBRL } from "@/lib/format";
 
 export function SuppliersView() {
-  const { suppliers, bills, purchases } = useApp();
+  const { suppliers, bills, purchases, readOnly } = useApp();
   const { openSupplierForm, openSupplier } = useActions();
   const [query, setQuery] = useState("");
 
@@ -45,14 +45,16 @@ export function SuppliersView() {
             Contato, preço e o que falta pagar.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => openSupplierForm()}
-          className="btn btn-primary h-11 px-4 text-sm"
-        >
-          <Plus className="size-4" strokeWidth={2.4} />
-          Novo fornecedor
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={() => openSupplierForm()}
+            className="btn btn-primary h-11 px-4 text-sm"
+          >
+            <Plus className="size-4" strokeWidth={2.4} />
+            Novo fornecedor
+          </button>
+        )}
       </header>
 
       <div className="animate-rise mt-5 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-[4px] border border-line bg-paper px-3 py-2.5 text-[0.75rem] text-muted">
@@ -137,14 +139,16 @@ export function SuppliersView() {
             Salve quem te vende para comparar preços e lembrar do que falta
             pagar.
           </p>
-          <button
-            type="button"
-            onClick={() => openSupplierForm()}
-            className="btn btn-primary mt-3 h-10 px-4 text-xs"
-          >
-            <Plus className="size-3.5" strokeWidth={2.4} />
-            Salvar fornecedor
-          </button>
+          {readOnly ? null : (
+            <button
+              type="button"
+              onClick={() => openSupplierForm()}
+              className="btn btn-primary mt-3 h-10 px-4 text-xs"
+            >
+              <Plus className="size-3.5" strokeWidth={2.4} />
+              Salvar fornecedor
+            </button>
+          )}
         </div>
       )}
 

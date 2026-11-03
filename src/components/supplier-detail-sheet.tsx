@@ -28,7 +28,7 @@ export function SupplierDetailSheet({
   supplierId,
   onClose,
 }: SupplierSheetDetailProps) {
-  const { suppliers, purchases, bills } = useApp();
+  const { suppliers, purchases, bills, readOnly } = useApp();
   const { openSupplierForm, openPurchase, openBill, openPayBill } = useActions();
 
   const supplier = suppliers.find((item) => item.id === supplierId);
@@ -75,24 +75,26 @@ export function SupplierDetailSheet({
       eyebrow="Fornecedor"
       onClose={onClose}
       footer={
-        <div className="flex gap-2.5">
-          <button
-            type="button"
-            onClick={() => openSupplierForm(supplier.id)}
-            className="btn btn-secondary flex-1 text-xs"
-          >
-            <Pencil className="size-4" strokeWidth={2} />
-            Editar
-          </button>
-          <button
-            type="button"
-            onClick={() => openPurchase({ supplierId: supplier.id })}
-            className="btn btn-primary flex-1 text-xs"
-          >
-            <Plus className="size-4" strokeWidth={2.4} />
-            Nova compra
-          </button>
-        </div>
+        readOnly ? undefined : (
+          <div className="flex gap-2.5">
+            <button
+              type="button"
+              onClick={() => openSupplierForm(supplier.id)}
+              className="btn btn-secondary flex-1 text-xs"
+            >
+              <Pencil className="size-4" strokeWidth={2} />
+              Editar
+            </button>
+            <button
+              type="button"
+              onClick={() => openPurchase({ supplierId: supplier.id })}
+              className="btn btn-primary flex-1 text-xs"
+            >
+              <Plus className="size-4" strokeWidth={2.4} />
+              Nova compra
+            </button>
+          </div>
+        )
       }
     >
       <div className="space-y-5">
@@ -123,26 +125,28 @@ export function SupplierDetailSheet({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() =>
-            openPurchase({ supplierId: supplier.id, withReceipt: true })
-          }
-          className="flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
-        >
-          <span className="grid size-10 flex-none place-items-center rounded-[4px] bg-paper text-terracotta-dark">
-            <Camera className="size-5" strokeWidth={1.9} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[0.8125rem] font-bold text-ink">
-              Registrar compra pela nota
+        {readOnly ? null : (
+          <button
+            type="button"
+            onClick={() =>
+              openPurchase({ supplierId: supplier.id, withReceipt: true })
+            }
+            className="flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
+          >
+            <span className="grid size-10 flex-none place-items-center rounded-[4px] bg-paper text-terracotta-dark">
+              <Camera className="size-5" strokeWidth={1.9} />
             </span>
-            <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted">
-              Fotografe o cupom e confira item, quantidade e valor.
+            <span className="min-w-0 flex-1">
+              <span className="block text-[0.8125rem] font-bold text-ink">
+                Registrar compra pela nota
+              </span>
+              <span className="mt-0.5 block text-[0.6875rem] leading-snug text-muted">
+                Fotografe o cupom e confira item, quantidade e valor.
+              </span>
             </span>
-          </span>
-          <ArrowRight className="size-4 flex-none text-muted" strokeWidth={2.2} />
-        </button>
+            <ArrowRight className="size-4 flex-none text-muted" strokeWidth={2.2} />
+          </button>
+        )}
 
         {supplier.phone || supplier.email || supplier.notes ? (
           <div className="space-y-2 rounded-[4px] border border-line bg-paper p-3 text-xs">
@@ -171,13 +175,15 @@ export function SupplierDetailSheet({
           <section>
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="eyebrow">Contas em aberto</p>
-              <button
-                type="button"
-                onClick={() => openBill(supplier.id)}
-                className="text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
-              >
-                Nova conta
-              </button>
+              {readOnly ? null : (
+                <button
+                  type="button"
+                  onClick={() => openBill(supplier.id)}
+                  className="text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
+                >
+                  Nova conta
+                </button>
+              )}
             </div>
             <div className="space-y-2">
               {openBills.map((bill) => (

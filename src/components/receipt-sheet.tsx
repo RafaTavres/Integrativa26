@@ -177,8 +177,6 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
       total + item.quantity * parseMoneyInput(item.unitCostInput),
     0,
   );
-  const reviewTotalCents =
-    kind === "purchase" ? purchaseTotalCents : saleAmountCents;
 
   const saleProducts = useMemo(
     () =>

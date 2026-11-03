@@ -105,11 +105,11 @@ export function WhatsappView() {
             <MessageCircle className="size-5" strokeWidth={1.8} />
           </span>
           <h1 className="display mt-3 text-xl text-ink">
-            Abra a loja conectada
+            Abra a loja de demonstração
           </h1>
           <p className="mx-auto mt-1 max-w-[22rem] text-xs leading-relaxed text-muted">
-            O que chega pelo WhatsApp fica na Loja de roupas conectada. Abra
-            ela no menu da sua loja para ver vendas, compras e ofertas.
+            O que chega pelo WhatsApp fica na Loja de roupas de demonstração.
+            Abra ela no menu da sua loja para ver vendas, compras e ofertas.
           </p>
           <button
             type="button"

@@ -36,7 +36,7 @@ O worker de e-mail é opcional. Sem `EMAIL_IMAP_*` e `SUPABASE_SERVICE_ROLE_KEY`
 ## 1. Preparar o Supabase (uma vez)
 
 1. Crie um projeto em [supabase.com](https://supabase.com) (região `South America (São Paulo)` reduz a latência).
-2. Abra **SQL Editor** e rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Ele cria tabelas, enums, RLS, a view `daily_totals` e as RPCs. O script é idempotente: pode ser rodado de novo para aplicar as tabelas de **fornecedores, compras e contas a pagar** em um projeto que já existia.
+2. Abra **SQL Editor** e rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Ele cria tabelas, enums, RLS, a view `daily_totals`, as RPCs e o hardening de demo/seed. O script é idempotente: pode ser rodado de novo para aplicar as tabelas de **fornecedores, compras e contas a pagar** em um projeto que já existia. Projetos já criados podem aplicar só [`supabase/migrations/20261103_hardening.sql`](supabase/migrations/20261103_hardening.sql) e [`20261103_stock_entry.sql`](supabase/migrations/20261103_stock_entry.sql).
 3. Ative o login anônimo em **Authentication → Sign In / Providers → Anonymous sign-ins**.
 4. Em **Authentication → URL Configuration**, defina:
    - **Site URL**: o endereço final do app (ex.: `https://estokar.seudominio.com`).
@@ -350,9 +350,14 @@ A preparação do WhatsApp feita em `/integracoes` **não usa variável de ambie
 
 Cada navegador cria uma sessão anônima própria (`estokar:auth` no `localStorage`) e enxerga apenas o negócio dela. A sessão criada com o nome antigo (`meu-caixa:auth`) é migrada automaticamente. Consequências:
 
-- Limpar os dados do navegador **perde o acesso** ao caixa (os dados continuam no banco, mas sem usuário para acessá-los).
+- Limpar os dados do navegador **perde o acesso** ao caixa (os dados continuam no banco, mas sem usuário para acessá-los). Use **Sua loja → Baixar meus dados** antes de limpar.
 - Não há sincronização entre celular e computador.
 - Para uso real, o próximo passo é permitir upgrade da conta anônima para e-mail/telefone.
+- Se a nuvem cair depois de já ter sido usada, o app abre o último retrato local em **modo somente leitura**; novos registros ficam bloqueados para não serem perdidos.
+
+### Loja de demonstração do WhatsApp
+
+A loja `LOJA_WHATSAPP_ID` é compartilhada e **somente leitura**. A RPC `entrar_loja_whatsapp` cria um vínculo `staff`; as policies de escrita aceitam apenas `owner/manager`. O app também esconde as ações de escrita nessa loja. As tabelas `n8n_*` e a RPC estão versionadas em `supabase/schema.sql` e em `supabase/migrations/20261103_hardening.sql`.
 
 ### Preparação do WhatsApp
 
@@ -364,7 +369,7 @@ A gravação usa `MediaRecorder` e a transcrição usa a Web Speech API do naveg
 
 ### Dados de exemplo
 
-O primeiro acesso cria produtos e lançamentos de exemplo do ramo escolhido. Isso é intencional para a demonstração. Para iniciar vazio, remova o seed em `src/lib/supabase/workspace.ts` (`seedWorkspace`) e em `src/lib/seed.ts` (`createSeedState`), ou apague os lançamentos pelo app antes de apresentar.
+O primeiro acesso cria produtos e lançamentos de exemplo do ramo escolhido uma única vez (`demo_seeded`). Isso é intencional para a demonstração. Itens apagados de propósito não voltam no próximo acesso. Para iniciar vazio, remova o seed em `src/lib/supabase/workspace.ts` (`seedWorkspace`) e em `src/lib/seed.ts` (`createSeedState`), ou apague os lançamentos pelo app antes de apresentar.
 
 ### Backup
 
