@@ -246,10 +246,12 @@ export function WhatsappView() {
             Vendido pelo WhatsApp
           </p>
           <p className="mt-1 text-2xl font-extrabold tracking-tight text-sage-dark tabular">
-            {formatBRL(totalVendas)}
+            {dados ? formatBRL(totalVendas) : "—"}
           </p>
           <p className="mt-0.5 text-[0.6875rem] text-muted">
-            {vendasCount} {vendasCount === 1 ? "venda" : "vendas"}
+            {dados
+              ? `${vendasCount} ${vendasCount === 1 ? "venda" : "vendas"}`
+              : "Carregando…"}
           </p>
         </div>
         <div className="rounded-[4px] border border-line bg-paper p-3.5">
@@ -257,10 +259,12 @@ export function WhatsappView() {
             Comprado pelo WhatsApp
           </p>
           <p className="mt-1 text-2xl font-extrabold tracking-tight text-terracotta-dark tabular">
-            {formatBRL(totalCompras)}
+            {dados ? formatBRL(totalCompras) : "—"}
           </p>
           <p className="mt-0.5 text-[0.6875rem] text-muted">
-            {comprasCount} {comprasCount === 1 ? "compra" : "compras"}
+            {dados
+              ? `${comprasCount} ${comprasCount === 1 ? "compra" : "compras"}`
+              : "Carregando…"}
           </p>
         </div>
         <div className="rounded-[4px] border border-line bg-paper p-3.5">
@@ -268,10 +272,13 @@ export function WhatsappView() {
             Ofertas recebidas
           </p>
           <p className="mt-1 text-2xl font-extrabold tracking-tight text-ink tabular">
-            {ofertas.length}{" "}
+            {dados ? ofertas.length : "—"}{" "}
             <span className="text-xs font-semibold text-muted">
-              de {fornecedores}{" "}
-              {fornecedores === 1 ? "fornecedor" : "fornecedores"}
+              {dados
+                ? `de ${fornecedores} ${
+                    fornecedores === 1 ? "fornecedor" : "fornecedores"
+                  }`
+                : ""}
             </span>
           </p>
         </div>
