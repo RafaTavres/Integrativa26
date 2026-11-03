@@ -147,14 +147,11 @@ export function ImportView() {
   return (
     <div className="mx-auto w-full max-w-[1120px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-9">
       <header className="animate-rise">
-        <p className="eyebrow">Trazer de uma vez</p>
-        <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
+        <h1 className="display text-[1.75rem] leading-[1.05] text-ink sm:text-[2rem]">
           Importar planilha ou XML
         </h1>
-        <p className="mt-2 max-w-[40rem] text-sm leading-relaxed text-muted">
-          Vendas, gastos, compras, contas e retiradas de um CSV, TSV ou XLSX, ou
-          os itens de uma NF-e/NFC-e pelo XML do fornecedor. O histórico de
-          compras alimenta os preços por fornecedor.
+        <p className="mt-1.5 max-w-[40rem] text-[0.8125rem] text-muted">
+          Traga vendas, gastos, compras ou o XML de uma NF-e/NFC-e.
         </p>
       </header>
 
@@ -390,40 +387,6 @@ export function ImportView() {
               Baixe o XML da NF-e/NFC-e no portal do fornecedor e envie aqui. O
               Estokar lê itens, fornecedor, data e pagamento, e cria a compra
               para revisão.
-            </p>
-          </div>
-
-          <div className="rounded-[4px] border border-line bg-cream p-4">
-            <p className="text-[0.6875rem] font-bold uppercase tracking-[0.1em] text-muted">
-              O que é aceito
-            </p>
-            <ul className="mt-2 space-y-1.5 text-[0.6875rem] leading-relaxed text-ink/80">
-              <li>
-                <strong>Tipo:</strong> venda, gasto, compra, retirada ou conta.
-              </li>
-              <li>
-                <strong>Valor:</strong> em reais, com vírgula ou ponto.
-              </li>
-              <li>
-                <strong>Data:</strong> 31/12/2026, 2026-12-31 ou data do Excel.
-              </li>
-              <li>
-                <strong>Compra:</strong> fornecedor e quantidade são opcionais.
-              </li>
-              <li>
-                <strong>Conta:</strong> vencimento e “pago” definem o status.
-              </li>
-            </ul>
-          </div>
-
-          <div className="rounded-[4px] border border-mustard/35 bg-mustard-soft/60 p-4">
-            <p className="flex items-center gap-2 text-xs font-bold text-mustard-dark">
-              <AlertTriangle className="size-3.5" strokeWidth={2.2} />
-              Antes de importar
-            </p>
-            <p className="mt-1.5 text-[0.6875rem] leading-relaxed text-ink/80">
-              A importação lança histórico financeiro. Ela não mexe no estoque
-              atual para não duplicar o que você já tem contado.
             </p>
           </div>
         </aside>

@@ -16,7 +16,6 @@ import { useApp } from "@/lib/store";
 import { useActions } from "./action-provider";
 import {
   buildPriceComparisons,
-  buildSupplierOverview,
   dueDateLabel,
   formatDateOnly,
   summarizeDeadStock,
@@ -24,39 +23,6 @@ import {
   summarizeWithdrawals,
 } from "@/lib/analytics";
 import { dayLabel, formatBRL } from "@/lib/format";
-
-function StatCard({
-  label,
-  value,
-  hint,
-  tone = "ink",
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  tone?: "ink" | "terracotta" | "mustard" | "sage";
-}) {
-  const valueTone = {
-    ink: "text-ink",
-    terracotta: "text-terracotta-dark",
-    mustard: "text-mustard-dark",
-    sage: "text-sage-dark",
-  }[tone];
-
-  return (
-    <div className="rounded-[4px] border border-line bg-paper p-3.5">
-      <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
-        {label}
-      </p>
-      <p
-        className={`mt-1 text-[1.4rem] font-extrabold leading-none tracking-tight tabular ${valueTone}`}
-      >
-        {value}
-      </p>
-      <p className="mt-1 text-[0.6875rem] text-muted">{hint}</p>
-    </div>
-  );
-}
 
 export function AnalyticsView() {
   const {
@@ -85,10 +51,6 @@ export function AnalyticsView() {
     () => summarizeWithdrawals(transactions),
     [transactions],
   );
-  const supplierOverview = useMemo(
-    () => buildSupplierOverview(suppliers, bills, purchases),
-    [suppliers, bills, purchases],
-  );
 
   const multiSupplier = comparisons.filter(
     (comparison) => comparison.suppliers.length > 1,
@@ -101,41 +63,39 @@ export function AnalyticsView() {
   return (
     <div className="mx-auto w-full max-w-[1120px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-9">
       <header className="animate-rise">
-        <p className="eyebrow">O que os números dizem</p>
-        <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
+        <h1 className="display text-[1.75rem] leading-[1.05] text-ink sm:text-[2rem]">
           Análises
         </h1>
-        <p className="mt-2 max-w-[40rem] text-sm leading-relaxed text-muted">
-          Previsão de pagamento, comparação de preço por fornecedor, dinheiro
-          parado no estoque e retiradas.
+        <p className="mt-1.5 max-w-[40rem] text-[0.8125rem] text-muted">
+          O que pesa no caixa e no estoque.
         </p>
       </header>
 
-      <div className="animate-rise mt-6 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Contas em aberto"
-          value={formatBRL(payables.openTotalCents)}
-          hint={`${payables.openCount} ${payables.openCount === 1 ? "conta" : "contas"} · ${formatBRL(payables.next7TotalCents)} nos próximos 7 dias`}
-          tone="terracotta"
-        />
-        <StatCard
-          label="Parado no estoque"
-          value={formatBRL(deadStock.totalTiedUpCents)}
-          hint={`${deadStock.items.length} ${deadStock.items.length === 1 ? "item sem venda" : "itens sem venda"} há ${deadStock.thresholdDays} dias`}
-          tone="mustard"
-        />
-        <StatCard
-          label="Retirado em 30 dias"
-          value={formatBRL(withdrawals.last30TotalCents)}
-          hint={`${withdrawals.count} ${withdrawals.count === 1 ? "retirada" : "retiradas"} no histórico`}
-          tone="sage"
-        />
-        <StatCard
-          label="Diferença de preço"
-          value={formatBRL(savingsOpportunities)}
-          hint={`Economia por unidade em ${multiSupplier.length} ${multiSupplier.length === 1 ? "item" : "itens"}`}
-          tone="ink"
-        />
+      <div className="animate-rise mt-5 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-[4px] border border-line bg-paper px-3 py-2.5 text-[0.75rem] text-muted">
+        <span>
+          <strong className="text-terracotta-dark tabular">
+            {formatBRL(payables.openTotalCents)}
+          </strong>{" "}
+          em aberto
+        </span>
+        <span>
+          <strong className="text-mustard-dark tabular">
+            {formatBRL(deadStock.totalTiedUpCents)}
+          </strong>{" "}
+          parado
+        </span>
+        <span>
+          <strong className="text-sage-dark tabular">
+            {formatBRL(withdrawals.last30TotalCents)}
+          </strong>{" "}
+          retirado
+        </span>
+        <span>
+          <strong className="text-ink tabular">
+            {formatBRL(savingsOpportunities)}
+          </strong>{" "}
+          de diferença
+        </span>
       </div>
 
       <div className="mt-6 grid items-start gap-5 lg:grid-cols-2">
@@ -145,9 +105,6 @@ export function AnalyticsView() {
               <p className="flex items-center gap-2 text-sm font-bold text-ink">
                 <CalendarClock className="size-4 text-terracotta-dark" strokeWidth={2} />
                 Previsão de pagamento
-              </p>
-              <p className="mt-1 text-[0.6875rem] text-muted">
-                Para onde o caixa precisa olhar.
               </p>
             </div>
             <Link
@@ -220,9 +177,6 @@ export function AnalyticsView() {
                 <Truck className="size-4 text-mustard-dark" strokeWidth={2} />
                 Fornecedores
               </p>
-              <p className="mt-1 text-[0.6875rem] text-muted">
-                Quem mais pesa no que falta pagar.
-              </p>
             </div>
             <Link
               href="/fornecedores"
@@ -271,25 +225,6 @@ export function AnalyticsView() {
               Sem contas em aberto por fornecedor.
             </p>
           )}
-
-          <div className="mt-3 border-t border-line pt-3">
-            <p className="text-[0.625rem] font-bold uppercase tracking-[0.08em] text-muted">
-              Compras por fornecedor
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
-              {supplierOverview.slice(0, 4).map((supplier) => (
-                <div key={supplier.id} className="min-w-0">
-                  <p className="truncate text-[0.6875rem] font-semibold text-ink">
-                    {supplier.name}
-                  </p>
-                  <p className="text-[0.625rem] text-muted">
-                    {supplier.purchaseCount}{" "}
-                    {supplier.purchaseCount === 1 ? "compra" : "compras"}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
         </section>
 
         <section className="animate-rise rounded-[4px] border border-line bg-paper p-4 lg:col-span-2">
@@ -298,9 +233,6 @@ export function AnalyticsView() {
               <p className="flex items-center gap-2 text-sm font-bold text-ink">
                 <PiggyBank className="size-4 text-sage-dark" strokeWidth={2} />
                 Preço por fornecedor
-              </p>
-              <p className="mt-1 text-[0.6875rem] text-muted">
-                O mesmo item comprado de lugares diferentes.
               </p>
             </div>
             <Link
@@ -403,9 +335,6 @@ export function AnalyticsView() {
                 <PackageX className="size-4 text-mustard-dark" strokeWidth={2} />
                 Encalhados
               </p>
-              <p className="mt-1 text-[0.6875rem] text-muted">
-                Sem venda há {deadStock.thresholdDays} dias.
-              </p>
             </div>
             <Link
               href="/estoque"
@@ -414,15 +343,6 @@ export function AnalyticsView() {
               Ver estoque
               <ArrowRight className="size-3" strokeWidth={2.4} />
             </Link>
-          </div>
-
-          <div className="mt-3 rounded-[4px] bg-mustard-soft px-3 py-2.5">
-            <p className="text-[0.625rem] font-bold uppercase tracking-[0.08em] text-mustard-dark">
-              Dinheiro parado
-            </p>
-            <p className="mt-0.5 text-xl font-extrabold tracking-tight text-mustard-dark tabular">
-              {formatBRL(deadStock.totalTiedUpCents)}
-            </p>
           </div>
 
           {deadStock.items.length > 0 ? (
@@ -464,33 +384,22 @@ export function AnalyticsView() {
                 <HandCoins className="size-4 text-terracotta-dark" strokeWidth={2} />
                 Retiradas
               </p>
-              <p className="mt-1 text-[0.6875rem] text-muted">
-                Dinheiro que saiu do caixa para você.
-              </p>
             </div>
             <span className="badge flex-none bg-blush text-terracotta-dark">
               não é gasto
             </span>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-[4px] border border-line bg-cream p-3">
-              <p className="text-[0.5625rem] font-bold uppercase tracking-[0.08em] text-muted">
-                Este mês
-              </p>
-              <p className="mt-1 text-lg font-extrabold tracking-tight text-ink tabular">
-                {formatBRL(withdrawals.monthTotalCents)}
-              </p>
-            </div>
-            <div className="rounded-[4px] border border-line bg-cream p-3">
-              <p className="text-[0.5625rem] font-bold uppercase tracking-[0.08em] text-muted">
-                Últimos 30 dias
-              </p>
-              <p className="mt-1 text-lg font-extrabold tracking-tight text-ink tabular">
-                {formatBRL(withdrawals.last30TotalCents)}
-              </p>
-            </div>
-          </div>
+          <p className="mt-2 text-[0.75rem] text-muted">
+            Este mês{" "}
+            <strong className="text-ink tabular">
+              {formatBRL(withdrawals.monthTotalCents)}
+            </strong>
+            {" · "}30 dias{" "}
+            <strong className="text-ink tabular">
+              {formatBRL(withdrawals.last30TotalCents)}
+            </strong>
+          </p>
 
           {withdrawals.items.length > 0 ? (
             <div className="mt-2 space-y-1.5">
