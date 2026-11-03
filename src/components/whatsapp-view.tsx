@@ -108,7 +108,7 @@ export function WhatsappView() {
             Abra a loja conectada
           </h1>
           <p className="mx-auto mt-1 max-w-[22rem] text-xs leading-relaxed text-muted">
-            O que chega pelo WhatsApp fica na Loja de roupa conectada. Abra
+            O que chega pelo WhatsApp fica na Loja de roupas conectada. Abra
             ela no menu da sua loja para ver vendas, compras e ofertas.
           </p>
           <button

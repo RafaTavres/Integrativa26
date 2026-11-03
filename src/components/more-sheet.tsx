@@ -61,7 +61,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
         toast("Você voltou para a sua loja.");
       } else {
         await entrarNaLojaWhatsapp();
-        toast("Loja conectada ao WhatsApp aberta.");
+        toast("Loja do WhatsApp aberta.");
       }
       onClose();
       router.push(naLojaWhatsapp ? "/" : "/whatsapp");
@@ -138,6 +138,9 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
 
   const canRetry =
     ready && cloudStatus !== "ready" && cloudStatus !== "connecting";
+  const displayBusinessName = naLojaWhatsapp
+    ? "Loja de roupas (WhatsApp)"
+    : business.name;
 
   return (
     <Sheet title="Sua loja" onClose={onClose}>
@@ -148,7 +151,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold text-ink">
-              {business.name}
+              {displayBusinessName}
             </p>
             <p className="mt-0.5 text-xs text-muted">
               {segment.label} · {business.city}
@@ -180,7 +183,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
               ? "Abrindo…"
               : naLojaWhatsapp
                 ? "Voltar para a minha loja"
-                : "Loja de roupa (WhatsApp)"}
+                : "Loja de roupas (WhatsApp)"}
           </span>
           {naLojaWhatsapp ? null : (
             <span className="badge flex-none bg-sage-soft text-sage-dark">

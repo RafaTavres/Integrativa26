@@ -179,7 +179,10 @@ function toNumber(value: number | string | null | undefined): number {
 function mapBusiness(row: BusinessRow): Business {
   return {
     id: row.id,
-    name: row.name,
+    name:
+      row.id === LOJA_WHATSAPP_ID
+        ? "Loja de roupas (WhatsApp)"
+        : row.name,
     ownerName: row.owner_name,
     city: row.city ?? "",
     segment: isSegmentId(row.segment) ? row.segment : "confeitaria",
