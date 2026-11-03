@@ -28,6 +28,7 @@ Deploy: guia completo em [`DEPLOY.md`](DEPLOY.md) (Vercel, Docker/VPS, Render e 
 | Backend | **Next.js Route Handlers** (`/api/config`, `/api/health`, `/api/integrations`) | Configuração em runtime, health check e contrato público para os conectores de entrada. |
 | Planilhas | **Parser próprio + `fflate`** | CSV/TSV são lidos no navegador; XLSX é descompactado e interpretado sem planilha externa pesada. |
 | Leitura de foto | **Tesseract.js + WebWorker** | OCR em português roda no próprio aparelho; a imagem não sai do navegador. Worker, núcleo WebAssembly e idioma são servidos pelo app. |
+| QR Code NFC-e | **jsQR + consulta no servidor** | O QR é lido no navegador; só a URL oficial é consultada, restrita a portais `.gov.br`. |
 | Áudio | **MediaRecorder + Web Speech API** | Gravação real e transcrição pt-BR quando o navegador oferece; a pessoa revisa antes de salvar. |
 | Integrações | **n8n + Supabase** (WhatsApp) / `ingestion_events` (e-mail/QR) | A loja conectada lê o que o n8n grava; os demais canais usam o contrato de entrada, sem fingir conexão. |
 
@@ -80,6 +81,14 @@ A foto é lida no navegador com **Tesseract.js**. `npm run dev` e `npm run build
 - Nenhuma imagem sai do aparelho. Não há chamada a serviço de OCR externo.
 - O parser entende quantidades decimais (`4,28 KG`), o formato de tabela da NFC-e e usa o total com o preço unitário para corrigir uma vírgula perdida pelo OCR.
 - Em produção, o `npm ci` precisa rodar antes do `npm run build` para que os arquivos do Tesseract existam. O Dockerfile e a Vercel já fazem isso.
+
+### QR Code da NFC-e
+
+Quando a foto tem o QR Code da NFC-e, o app lê o código com **jsQR** antes de mostrar a conferência. A chave de acesso e a URL do portal são extraídas do QR; o servidor consulta a página oficial da SEFAZ e tenta ler a tabela de itens. A imagem continua sem sair do aparelho: o navegador envia só a URL do QR para o servidor.
+
+- Só URLs de portais `.gov.br` são aceitas. Isso evita usar o endpoint como proxy para outros endereços.
+- Se a SEFAZ não devolver os itens (captcha, layout diferente ou nota não encontrada), o app mantém a leitura da foto, avisa e oferece **Abrir nota na SEFAZ**.
+- A consulta depende do portal de cada estado. Alguns exigem captcha ou bloqueiam acesso automático; nesses casos o fluxo manual continua funcionando.
 
 ### WhatsApp via n8n
 
@@ -147,7 +156,7 @@ Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md
 - **Retirada** — dinheiro que você tira do caixa para uso pessoal. Entra em “Saiu” e no extrato com o rótulo **retirada**, mas não é despesa do negócio nem conta a pagar.
 - **Importar planilha** — CSV, TSV ou XLSX com vendas, gastos, compras, contas e retiradas. Mostra prévia, valida linha por linha e não mexe no estoque atual. As compras importadas alimentam o histórico de preços por fornecedor.
 - **Análises** — previsão de pagamento, comparação de preço do mesmo item entre fornecedores, itens encalhados com o valor parado e resumo de retiradas.
-- **Foto da nota** — tira ou escolhe a foto do cupom/comprovante; o app lê o texto no próprio aparelho com **Tesseract.js em português**, separa fornecedor, itens, quantidade, custo, total, data, CNPJ e forma de pagamento, e **só então** abre a tela de conferência. Cada item é comparado com o estoque: os que já existem aparecem como **No estoque**, com o nome cadastrado, e os demais como **Produto novo**. Você corrige o que precisar, escolhe entre **compra** (entra no estoque e no custo) e **venda** (baixa estoque e entra no caixa) e confirma. A imagem não é enviada nem guardada no servidor; o lançamento fica com `source_type = image_recognition`. Se a leitura não render, **Prefiro digitar sem foto** abre o mesmo formulário vazio e salva como `manual`.
+- **Foto da nota** — tira ou escolhe a foto do cupom/comprovante; o app lê o texto no próprio aparelho com **Tesseract.js em português**, separa fornecedor, itens, quantidade, custo, total, data, CNPJ e forma de pagamento, e **só então** abre a tela de conferência. Se a foto tiver o **QR Code da NFC-e**, o app lê o código e tenta carregar os itens oficiais direto do portal da SEFAZ; se o portal não responder, continua com a leitura da foto. Cada item é comparado com o estoque: os que já existem aparecem como **No estoque**, com o nome cadastrado, e os demais como **Produto novo**. Você corrige o que precisar, escolhe entre **compra** (entra no estoque e no custo) e **venda** (baixa estoque e entra no caixa) e confirma. A imagem não é enviada nem guardada no servidor; o lançamento fica com `source_type = image_recognition`. Se a leitura não render, **Prefiro digitar sem foto** abre o mesmo formulário vazio e salva como `manual`.
 - **Áudio** — grava de verdade pelo microfone do navegador (`MediaRecorder`), transcreve em português com a Web Speech API quando disponível e permite corrigir o texto. O rascunho nasce como `pending_review` com `source_type = audio_transcription`; o áudio fica só na memória da página e não é enviado ao servidor.
 - **Entrada rápida de estoque** — produto, quantidade e custo. Continua disponível para repor um item sem passar pela compra completa.
 - **Radar de estoque** — produtos no mínimo ou zerados aparecem no topo do extrato e na página de estoque/produtos, com ação direta para repor.
@@ -461,6 +470,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - Limpar os dados do navegador apaga o vínculo com o negócio (o registro continua no banco, mas sem acesso).
 - O modo privado pode bloquear o `localStorage` e a sessão.
 - A foto não é armazenada: o OCR de texto roda no próprio navegador e a imagem não sai do aparelho. O reconhecimento é de texto, não de imagem (não identifica objetos).
+- A consulta por QR Code depende do portal da SEFAZ do estado. Alguns portais usam captcha ou bloqueiam acesso automático; nesses casos o app mantém a leitura da foto e oferece o link oficial.
 - O WhatsApp ainda não está conectado para a sua loja: a tela de integrações só salva o número e as preferências neste navegador. A loja de demonstração em `/whatsapp` é alimentada pelo n8n e pelas tabelas `n8n_*` do Supabase. E-mail/XML e QR Code também não têm conector ativo; a tabela e o contrato de entrada já estão prontos, mas a integração fica para a próxima etapa.
 
 ### Próximos passos para produção
@@ -470,7 +480,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 3. Adicionar upgrade de conta anônima para e-mail/telefone, recuperando o mesmo negócio em outros aparelhos.
 4. Conectar o WhatsApp da própria loja e o e-mail/XML ao contrato de `ingestion_events` (o webapp já aceita o formato).
 5. Transformar o app em PWA com fila offline e sincronização.
-6. Criar leitura de QR Code/SEFAZ no celular para importar a nota fiscal.
+6. Ampliar a leitura de QR Code/SEFAZ para os estados que usam captcha ou layouts diferentes do DANFE.
 
 ---
 

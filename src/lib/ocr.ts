@@ -28,6 +28,8 @@ export interface ReceiptDraft {
   rawText: string;
   confidence: number;
   warnings: string[];
+  /** URL do QR Code da NFC-e, quando a foto tem um. */
+  qrCode?: string;
 }
 
 export interface OcrProgress {
@@ -980,6 +982,23 @@ function parseReceiptText(text: string, ocrConfidence: number): ReceiptDraft {
   };
 }
 
+async function decodeQrCode(
+  canvas: HTMLCanvasElement,
+): Promise<string | undefined> {
+  try {
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return undefined;
+    const image = context.getImageData(0, 0, canvas.width, canvas.height);
+    const { default: jsQR } = await import("jsqr");
+    const result = jsQR(image.data, image.width, image.height, {
+      inversionAttempts: "attemptBoth",
+    });
+    return result?.data?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function readReceiptPhoto(
   file: File,
   options: ReadReceiptOptions = {},
@@ -988,6 +1007,9 @@ export async function readReceiptPhoto(
   onProgress?.({ progress: 0.02, status: "Preparando a foto" });
 
   const canvas = await prepareCanvas(file, rotation);
+  if (signal?.aborted) throw new DOMException("Leitura cancelada.", "AbortError");
+
+  const qrCode = await decodeQrCode(canvas);
   if (signal?.aborted) throw new DOMException("Leitura cancelada.", "AbortError");
 
   onProgress?.({ progress: 0.08, status: "Carregando o leitor" });
@@ -1031,7 +1053,7 @@ export async function readReceiptPhoto(
       result.data.confidence ?? 0,
     );
     onProgress?.({ progress: 1, status: "Pronto" });
-    return draft;
+    return { ...draft, qrCode };
   } catch (error) {
     if (signal?.aborted) {
       throw new DOMException("Leitura cancelada.", "AbortError");

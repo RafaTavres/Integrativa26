@@ -8,6 +8,7 @@ import {
   Loader2,
   PenLine,
   Plus,
+  QrCode,
   RefreshCw,
   RotateCw,
   Trash2,
@@ -33,6 +34,7 @@ import {
   SOURCE_TYPE_LABELS,
   type PaymentMethod,
 } from "@/lib/types";
+import { parseNfceQrCode, type NfceData } from "@/lib/nfce";
 import { cn } from "@/lib/cn";
 
 interface ReceiptSheetProps {
@@ -59,6 +61,7 @@ interface SuccessData {
   detail: string;
   totalCents: number;
   paymentMethod: PaymentMethod;
+  viaQr?: boolean;
 }
 
 function emptyDraft(): ReceiptDraft {
@@ -91,6 +94,35 @@ function productUnit(
   return quantity === 1 ? product.unit : product.unitPlural || product.unit;
 }
 
+function nfceToDraft(
+  data: NfceData,
+  qrCode: string,
+  fallback: ReceiptDraft,
+): ReceiptDraft {
+  const items = data.items.map((item) => ({
+    name: item.name,
+    quantity: item.quantity,
+    unitCostCents: item.unitCostCents,
+    totalCents: item.totalCents,
+  }));
+  const itemsTotal = items.reduce((total, item) => total + item.totalCents, 0);
+  return {
+    kind: "purchase",
+    supplierName: data.supplierName ?? fallback.supplierName,
+    cnpj: data.cnpj ?? fallback.cnpj,
+    date: data.date ?? fallback.date,
+    totalCents: data.totalCents ?? itemsTotal,
+    paymentMethod: fallback.paymentMethod,
+    items,
+    rawText: `QR Code NFC-e${data.key ? ` · ${data.key}` : ""}${
+      fallback.rawText ? `\n${fallback.rawText}` : ""
+    }`,
+    confidence: 1,
+    warnings: [],
+    qrCode,
+  };
+}
+
 export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
   const {
     products,
@@ -103,6 +135,7 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const nfceAbortRef = useRef<AbortController | null>(null);
   const itemCounterRef = useRef(0);
 
   const [phase, setPhase] = useState<Phase>("capture");
@@ -128,6 +161,11 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [nfceStatus, setNfceStatus] = useState<
+    "idle" | "loading" | "ok" | "error"
+  >("idle");
+  const [nfceMessage, setNfceMessage] = useState<string | null>(null);
+  const [nfceUrl, setNfceUrl] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessData | null>(null);
 
   const selectedProduct = products.find((product) => product.id === productId);
@@ -170,7 +208,10 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
   }, [photoFile]);
 
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    return () => {
+      abortRef.current?.abort();
+      nfceAbortRef.current?.abort();
+    };
   }, []);
 
   function nextItemKey(): string {
@@ -237,13 +278,82 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
     setSaveError(null);
   }
 
+  async function loadNfce(qrCode: string, fallback: ReceiptDraft) {
+    const parsed = parseNfceQrCode(qrCode);
+    if (!parsed) {
+      setNfceStatus("error");
+      setNfceMessage(
+        "QR Code lido, mas não é uma consulta de NFC-e reconhecida. Confira a leitura da foto.",
+      );
+      return;
+    }
+
+    nfceAbortRef.current?.abort();
+    const controller = new AbortController();
+    nfceAbortRef.current = controller;
+
+    setNfceUrl(parsed.url);
+    setNfceStatus("loading");
+    setNfceMessage(
+      parsed.key
+        ? `Chave ${parsed.key}. Buscando os itens oficiais…`
+        : "Buscando os itens oficiais da NFC-e…",
+    );
+
+    try {
+      const response = await fetch("/api/nfce", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: parsed.url }),
+        signal: controller.signal,
+      });
+      const data = (await response.json()) as NfceData & { error?: string };
+      if (controller.signal.aborted) return;
+      if (!response.ok) {
+        throw new Error(
+          data.error ?? "Não conseguimos consultar a NFC-e agora.",
+        );
+      }
+      if (!data.items?.length) {
+        throw new Error("A consulta não devolveu itens para esta nota.");
+      }
+
+      const official = nfceToDraft(data, qrCode, fallback);
+      setDraft(official);
+      hydrateReview(official);
+      setNfceStatus("ok");
+      setNfceMessage(
+        `Itens oficiais da NFC-e carregados${
+          data.key ? ` · chave ${data.key}` : ""
+        }. Confira e ajuste se precisar.`,
+      );
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setNfceStatus("error");
+      setNfceMessage(
+        error instanceof Error
+          ? error.message
+          : "Não conseguimos consultar a NFC-e. Confira a leitura da foto.",
+      );
+    } finally {
+      if (nfceAbortRef.current === controller) {
+        nfceAbortRef.current = null;
+      }
+    }
+  }
+
   async function runOcr(file: File, nextRotation: number) {
     abortRef.current?.abort();
+    nfceAbortRef.current?.abort();
+    nfceAbortRef.current = null;
     const controller = new AbortController();
     abortRef.current = controller;
 
     setPhase("processing");
     setOcrError(null);
+    setNfceStatus("idle");
+    setNfceMessage(null);
+    setNfceUrl(null);
     setProgress({ value: 0.02, status: "Preparando a foto" });
 
     try {
@@ -257,6 +367,9 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
       setDraft(result);
       hydrateReview(result);
       setPhase("review");
+      if (result.qrCode) {
+        void loadNfce(result.qrCode, result);
+      }
     } catch (error) {
       if (isAbortError(error) || controller.signal.aborted) return;
       setOcrError(
@@ -285,10 +398,15 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
 
   function changePhoto() {
     abortRef.current?.abort();
+    nfceAbortRef.current?.abort();
+    nfceAbortRef.current = null;
     abortRef.current = null;
     setPhotoFile(null);
     setDraft(null);
     setOcrError(null);
+    setNfceStatus("idle");
+    setNfceMessage(null);
+    setNfceUrl(null);
     setProgress({ value: 0, status: "" });
     setPhase("capture");
   }
@@ -302,9 +420,14 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
 
   function startManual() {
     abortRef.current?.abort();
+    nfceAbortRef.current?.abort();
+    nfceAbortRef.current = null;
     abortRef.current = null;
     setPhotoFile(null);
     setRotation(0);
+    setNfceStatus("idle");
+    setNfceMessage(null);
+    setNfceUrl(null);
     const manual = emptyDraft();
     setDraft(manual);
     hydrateReview(manual);
@@ -432,7 +555,7 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
     event.preventDefault();
     setAttempted(true);
     setSaveError(null);
-    if (saving) return;
+    if (saving || nfceStatus === "loading") return;
 
     if (kind === "sale") {
       if (!selectedProduct || !paymentMethod || saleAmountCents < 1) return;
@@ -452,6 +575,7 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
         }`
       : "Registro preenchido sem foto";
     const sourceType = photoFile ? "image_recognition" : "manual";
+    const usedQr = nfceStatus === "ok";
 
     setSaving(true);
     try {
@@ -471,6 +595,7 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
             quantity === 1 ? "1 unidade" : `${quantity} unidades`,
           totalCents: saleAmountCents,
           paymentMethod,
+          viaQr: usedQr,
         });
         setPhase("success");
         return;
@@ -553,6 +678,7 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
             : `para pagar em ${dueDate}`,
         totalCents: purchaseTotalCents,
         paymentMethod: paymentMethod ?? "other",
+        viaQr: usedQr,
       });
       setPhase("success");
     } catch (error) {
@@ -601,8 +727,14 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
           <p className="mt-2 inline-flex items-center gap-1.5 rounded-[3px] bg-cream px-2 py-1 text-[0.6875rem] font-medium text-muted">
             {photoFile ? (
               <>
-                <Camera className="size-3" strokeWidth={2} />
-                {SOURCE_TYPE_LABELS.image_recognition}
+                {success.viaQr ? (
+                  <QrCode className="size-3" strokeWidth={2} />
+                ) : (
+                  <Camera className="size-3" strokeWidth={2} />
+                )}
+                {success.viaQr
+                  ? "QR Code da NFC-e"
+                  : SOURCE_TYPE_LABELS.image_recognition}
               </>
             ) : (
               <>
@@ -682,14 +814,17 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
   if (phase === "review") {
     const isManual = !photoFile;
     const readNothing = !isManual && !draft?.rawText;
-    const confidenceTone =
-      (draft?.confidence ?? 0) >= 0.7
+    const officialNfce = nfceStatus === "ok";
+    const confidenceTone = officialNfce
+      ? "sage"
+      : (draft?.confidence ?? 0) >= 0.7
         ? "sage"
         : (draft?.confidence ?? 0) >= 0.45
           ? "mustard"
           : "terracotta";
-    const confidenceLabel =
-      confidenceTone === "sage"
+    const confidenceLabel = officialNfce
+      ? "Dados da NFC-e"
+      : confidenceTone === "sage"
         ? "Leitura boa"
         : confidenceTone === "mustard"
           ? "Leitura parcial"
@@ -701,9 +836,11 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
         description={
           isManual
             ? "Preencha o que aconteceu e confirme para salvar."
-            : readNothing
-              ? "A foto não rendeu texto. Complete os dados ou tente outra foto."
-              : "O app leu a foto. Ajuste o que estiver errado e confirme."
+            : officialNfce
+              ? "Itens e valores vieram da consulta oficial da NFC-e. Confira e confirme."
+              : readNothing
+                ? "A foto não rendeu texto. Complete os dados ou tente outra foto."
+                : "O app leu a foto. Ajuste o que estiver errado e confirme."
         }
         onClose={onClose}
         footer={
@@ -719,11 +856,17 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
             <button
               type="submit"
               form="receipt-review-form"
-              disabled={saving}
-              aria-busy={saving || undefined}
+              disabled={saving || nfceStatus === "loading"}
+              aria-busy={saving || nfceStatus === "loading" || undefined}
               className="btn btn-primary h-14 flex-[1.5] text-base"
             >
-              {saving ? "Salvando…" : isManual ? "Salvar" : "Está correto"}
+              {nfceStatus === "loading"
+                ? "Buscando NFC-e…"
+                : saving
+                  ? "Salvando…"
+                  : isManual
+                    ? "Salvar"
+                    : "Está correto"}
               <Check className="size-5" strokeWidth={2.4} />
             </button>
           </div>
@@ -752,13 +895,15 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
                 {confidenceLabel}
               </p>
               <p className="mt-1.5 text-[0.75rem] leading-relaxed">
-                {confidenceTone === "sage"
-                  ? "Os dados principais foram encontrados. Dá uma olhada rápida e confirme."
-                  : confidenceTone === "mustard"
-                    ? "Alguns dados podem estar incompletos. Confira item, valor e fornecedor."
-                    : "A foto estava difícil. Confira tudo com calma antes de salvar."}
+                {officialNfce
+                  ? "Itens e valores vieram da consulta oficial da NFC-e."
+                  : confidenceTone === "sage"
+                    ? "Os dados principais foram encontrados. Dá uma olhada rápida e confirme."
+                    : confidenceTone === "mustard"
+                      ? "Alguns dados podem estar incompletos. Confira item, valor e fornecedor."
+                      : "A foto estava difícil. Confira tudo com calma antes de salvar."}
               </p>
-              {(draft?.warnings.length ?? 0) > 0 ? (
+              {!officialNfce && (draft?.warnings.length ?? 0) > 0 ? (
                 <ul className="mt-2 space-y-1 text-[0.6875rem] leading-relaxed">
                   {draft?.warnings.slice(0, 3).map((warning) => (
                     <li key={warning} className="flex items-start gap-1.5">
@@ -767,6 +912,40 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
                     </li>
                   ))}
                 </ul>
+              ) : null}
+            </div>
+          ) : null}
+
+          {nfceStatus !== "idle" ? (
+            <div
+              className={cn(
+                "rounded-[4px] border p-3 text-[0.75rem] leading-relaxed",
+                nfceStatus === "ok" &&
+                  "border-sage/35 bg-sage-soft/70 text-sage-dark",
+                nfceStatus === "error" &&
+                  "border-mustard/45 bg-mustard-soft/70 text-ink",
+                nfceStatus === "loading" &&
+                  "border-line bg-cream text-muted",
+              )}
+            >
+              <p className="flex items-center gap-1.5 text-[0.6875rem] font-bold uppercase tracking-[0.1em]">
+                <QrCode className="size-3.5" strokeWidth={2.2} />
+                {nfceStatus === "loading"
+                  ? "Consultando NFC-e"
+                  : nfceStatus === "ok"
+                    ? "QR Code da NFC-e"
+                    : "QR Code lido"}
+              </p>
+              <p className="mt-1 break-words">{nfceMessage}</p>
+              {nfceStatus === "error" && nfceUrl ? (
+                <a
+                  href={nfceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1.5 inline-flex font-bold underline underline-offset-2"
+                >
+                  Abrir nota na SEFAZ
+                </a>
               ) : null}
             </div>
           ) : null}
