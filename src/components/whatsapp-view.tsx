@@ -9,7 +9,9 @@ import {
   Mic,
   RefreshCw,
   Search,
+  Store,
   Tag,
+  Truck,
   Wallet,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
@@ -58,6 +60,42 @@ function quantidade(valor: number): string {
   return valor.toLocaleString("pt-BR");
 }
 
+const SUMMARY_TONES = {
+  sage: "text-sage-dark",
+  terracotta: "text-terracotta-dark",
+  mustard: "text-mustard-dark",
+  ink: "text-ink",
+} as const;
+
+function SummaryCard({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: string | number;
+  detail: string;
+  tone: keyof typeof SUMMARY_TONES;
+}) {
+  return (
+    <div className="rounded-[4px] border border-line bg-paper p-3.5">
+      <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-1 text-2xl font-extrabold tracking-tight tabular",
+          SUMMARY_TONES[tone],
+        )}
+      >
+        {value}
+      </p>
+      <p className="mt-0.5 text-[0.6875rem] text-muted">{detail}</p>
+    </div>
+  );
+}
+
 export function WhatsappView() {
   const {
     ready,
@@ -72,6 +110,9 @@ export function WhatsappView() {
   const [dados, setDados] = useState<DadosWhatsapp | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
+  const [grupo, setGrupo] = useState<"todos" | "loja" | "fornecedores">(
+    "todos",
+  );
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const busyRef = useRef(false);
@@ -152,6 +193,7 @@ export function WhatsappView() {
     (item) => item.tipo === "compra",
   ).length;
   const fornecedores = new Set(ofertas.map((item) => item.fornecedor)).size;
+  const promocoesCount = ofertas.filter((item) => item.promocao).length;
   const totalContas = openBills.reduce(
     (total, bill) => total + bill.amountCents,
     0,
@@ -240,48 +282,178 @@ export function WhatsappView() {
         </div>
       </header>
 
+      <section className="animate-rise mt-5" aria-label="Grupos do WhatsApp">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <p className="eyebrow">Grupos conectados</p>
+          <p className="text-[0.625rem] text-muted">
+            Toque em um grupo para filtrar
+          </p>
+        </div>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {[
+            {
+              id: "todos" as const,
+              icon: MessageCircle,
+              title: "Todos",
+              detail: `${movimentos.length + ofertas.length} registros`,
+            },
+            {
+              id: "loja" as const,
+              icon: Store,
+              title: "Grupo da loja",
+              detail: `${movimentos.length} ${
+                movimentos.length === 1 ? "mensagem" : "mensagens"
+              }`,
+            },
+            {
+              id: "fornecedores" as const,
+              icon: Truck,
+              title: "Grupo de fornecedores",
+              detail: `${ofertas.length} ${
+                ofertas.length === 1 ? "oferta" : "ofertas"
+              }`,
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+            const active = grupo === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setGrupo(item.id)}
+                aria-pressed={active}
+                className={cn(
+                  "flex min-h-[4.25rem] items-center gap-3 rounded-[4px] border p-3 text-left transition-colors",
+                  active
+                    ? "border-terracotta bg-terracotta-soft"
+                    : "border-line bg-paper hover:border-sand-dark hover:bg-cream",
+                )}
+              >
+                <span
+                  className={cn(
+                    "grid size-9 flex-none place-items-center rounded-[3px]",
+                    active
+                      ? "bg-paper text-terracotta-dark"
+                      : "bg-cream text-ink",
+                  )}
+                >
+                  <Icon className="size-4" strokeWidth={2} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[0.8125rem] font-bold text-ink">
+                    {item.title}
+                  </span>
+                  <span className="mt-0.5 block text-[0.6875rem] text-muted">
+                    {item.detail}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       <div className="animate-rise mt-6 grid gap-2.5 sm:grid-cols-3">
-        <div className="rounded-[4px] border border-line bg-paper p-3.5">
-          <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
-            Vendido pelo WhatsApp
-          </p>
-          <p className="mt-1 text-2xl font-extrabold tracking-tight text-sage-dark tabular">
-            {dados ? formatBRL(totalVendas) : "—"}
-          </p>
-          <p className="mt-0.5 text-[0.6875rem] text-muted">
-            {dados
-              ? `${vendasCount} ${vendasCount === 1 ? "venda" : "vendas"}`
-              : "Carregando…"}
-          </p>
-        </div>
-        <div className="rounded-[4px] border border-line bg-paper p-3.5">
-          <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
-            Comprado pelo WhatsApp
-          </p>
-          <p className="mt-1 text-2xl font-extrabold tracking-tight text-terracotta-dark tabular">
-            {dados ? formatBRL(totalCompras) : "—"}
-          </p>
-          <p className="mt-0.5 text-[0.6875rem] text-muted">
-            {dados
-              ? `${comprasCount} ${comprasCount === 1 ? "compra" : "compras"}`
-              : "Carregando…"}
-          </p>
-        </div>
-        <div className="rounded-[4px] border border-line bg-paper p-3.5">
-          <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
-            Ofertas recebidas
-          </p>
-          <p className="mt-1 text-2xl font-extrabold tracking-tight text-ink tabular">
-            {dados ? ofertas.length : "—"}{" "}
-            <span className="text-xs font-semibold text-muted">
-              {dados
-                ? `de ${fornecedores} ${
-                    fornecedores === 1 ? "fornecedor" : "fornecedores"
-                  }`
-                : ""}
-            </span>
-          </p>
-        </div>
+        {grupo === "fornecedores" ? (
+          <>
+            <SummaryCard
+              label="Ofertas recebidas"
+              value={dados ? ofertas.length : "—"}
+              detail={
+                dados
+                  ? `${fornecedores} ${
+                      fornecedores === 1 ? "fornecedor" : "fornecedores"
+                    }`
+                  : "Carregando…"
+              }
+              tone="ink"
+            />
+            <SummaryCard
+              label="Em promoção"
+              value={dados ? promocoesCount : "—"}
+              detail={
+                dados
+                  ? `${promocoesCount === 1 ? "oferta" : "ofertas"} com desconto`
+                  : "Carregando…"
+              }
+              tone="mustard"
+            />
+            <SummaryCard
+              label="Fornecedores"
+              value={dados ? fornecedores : "—"}
+              detail="no grupo de fornecedores"
+              tone="sage"
+            />
+          </>
+        ) : grupo === "loja" ? (
+          <>
+            <SummaryCard
+              label="Vendido pelo WhatsApp"
+              value={dados ? formatBRL(totalVendas) : "—"}
+              detail={
+                dados
+                  ? `${vendasCount} ${vendasCount === 1 ? "venda" : "vendas"}`
+                  : "Carregando…"
+              }
+              tone="sage"
+            />
+            <SummaryCard
+              label="Comprado pelo WhatsApp"
+              value={dados ? formatBRL(totalCompras) : "—"}
+              detail={
+                dados
+                  ? `${comprasCount} ${
+                      comprasCount === 1 ? "compra" : "compras"
+                    }`
+                  : "Carregando…"
+              }
+              tone="terracotta"
+            />
+            <SummaryCard
+              label="Mensagens"
+              value={dados ? movimentos.length : "—"}
+              detail="no grupo da loja"
+              tone="ink"
+            />
+          </>
+        ) : (
+          <>
+            <SummaryCard
+              label="Vendido pelo WhatsApp"
+              value={dados ? formatBRL(totalVendas) : "—"}
+              detail={
+                dados
+                  ? `${vendasCount} ${vendasCount === 1 ? "venda" : "vendas"}`
+                  : "Carregando…"
+              }
+              tone="sage"
+            />
+            <SummaryCard
+              label="Comprado pelo WhatsApp"
+              value={dados ? formatBRL(totalCompras) : "—"}
+              detail={
+                dados
+                  ? `${comprasCount} ${
+                      comprasCount === 1 ? "compra" : "compras"
+                    }`
+                  : "Carregando…"
+              }
+              tone="terracotta"
+            />
+            <SummaryCard
+              label="Ofertas recebidas"
+              value={dados ? ofertas.length : "—"}
+              detail={
+                dados
+                  ? `${fornecedores} ${
+                      fornecedores === 1 ? "fornecedor" : "fornecedores"
+                    }`
+                  : "Carregando…"
+              }
+              tone="ink"
+            />
+          </>
+        )}
       </div>
 
       <div className="animate-rise mt-2 grid gap-2 sm:grid-cols-3">
@@ -346,15 +518,16 @@ export function WhatsappView() {
 
       {dados ? (
         <>
-          <section className="mt-8">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="eyebrow">Grupo de fornecedores</p>
-                <h2 className="display mt-1 text-xl text-ink">
-                  Melhor preço de cada item
-                </h2>
+          {grupo !== "loja" ? (
+            <section className="mt-8">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="eyebrow">Grupo de fornecedores</p>
+                  <h2 className="display mt-1 text-xl text-ink">
+                    Melhor preço de cada item
+                  </h2>
+                </div>
               </div>
-            </div>
 
             {produtos.length > 2 ? (
               <div className="relative mt-4">
@@ -446,8 +619,9 @@ export function WhatsappView() {
               </div>
             ) : null}
           </section>
+          ) : null}
 
-          {ofertas.length > 0 ? (
+          {grupo !== "loja" && ofertas.length > 0 ? (
             <section className="mt-8">
               <p className="eyebrow">Tudo o que chegou</p>
               <h2 className="display mt-1 text-xl text-ink">
@@ -484,11 +658,12 @@ export function WhatsappView() {
             </section>
           ) : null}
 
-          <section className="mt-8">
-            <p className="eyebrow">Grupo da loja</p>
-            <h2 className="display mt-1 text-xl text-ink">
-              Vendas e compras pelo WhatsApp
-            </h2>
+          {grupo !== "fornecedores" ? (
+            <section className="mt-8">
+              <p className="eyebrow">Grupo da loja</p>
+              <h2 className="display mt-1 text-xl text-ink">
+                Vendas e compras pelo WhatsApp
+              </h2>
             <p className="mt-1 text-[0.6875rem] text-muted">
               {movimentos.length}{" "}
               {movimentos.length === 1 ? "mensagem" : "mensagens"} ·{" "}
@@ -550,7 +725,8 @@ export function WhatsappView() {
                 automática.
               </div>
             )}
-          </section>
+            </section>
+          ) : null}
         </>
       ) : null}
     </div>
