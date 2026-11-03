@@ -23,6 +23,7 @@ import {
   type ImportSummary,
   type ParsedSpreadsheet,
 } from "@/lib/import";
+import { parseNfeXmlFile } from "@/lib/nfe-xml";
 import { formatBRL } from "@/lib/format";
 
 const KIND_LABELS: Record<ImportKind, string> = {
@@ -86,13 +87,18 @@ export function ImportView() {
     setParseError(null);
     setSummary(null);
     try {
-      const result = await parseSpreadsheetFile(file);
+      const isXml = file.name.toLowerCase().endsWith(".xml");
+      const result = isXml
+        ? await parseNfeXmlFile(file)
+        : await parseSpreadsheetFile(file);
       setParsed(result);
       if (result.rows.length === 0) {
         setParseError(
           result.invalid.length > 0
             ? "Nenhuma linha válida. Confira os erros abaixo."
-            : "A planilha não tem linhas para importar.",
+            : isXml
+              ? "O XML não tem itens para importar."
+              : "A planilha não tem linhas para importar.",
         );
       }
     } catch (error) {
@@ -100,7 +106,7 @@ export function ImportView() {
       setParseError(
         error instanceof Error
           ? error.message
-          : "Não conseguimos ler a planilha.",
+          : "Não conseguimos ler o arquivo.",
       );
     } finally {
       setParsing(false);
@@ -143,11 +149,12 @@ export function ImportView() {
       <header className="animate-rise">
         <p className="eyebrow">Trazer de uma vez</p>
         <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
-          Importar planilha
+          Importar planilha ou XML
         </h1>
         <p className="mt-2 max-w-[40rem] text-sm leading-relaxed text-muted">
-          Vendas, gastos, compras, contas e retiradas de um CSV, TSV ou XLSX. O
-          histórico de compras alimenta os preços por fornecedor.
+          Vendas, gastos, compras, contas e retiradas de um CSV, TSV ou XLSX, ou
+          os itens de uma NF-e/NFC-e pelo XML do fornecedor. O histórico de
+          compras alimenta os preços por fornecedor.
         </p>
       </header>
 
@@ -178,10 +185,10 @@ export function ImportView() {
               )}
             </span>
             <p className="mt-3 text-sm font-bold text-ink">
-              {parsing ? "Lendo planilha…" : "Arraste o arquivo aqui"}
+              {parsing ? "Lendo arquivo…" : "Arraste o arquivo aqui"}
             </p>
             <p className="mt-1 text-[0.6875rem] text-muted">
-              CSV, TSV, TXT ou XLSX · até algumas milhares de linhas
+              CSV, TSV, TXT, XLSX ou XML de NF-e/NFC-e
             </p>
             <label className="btn btn-secondary mx-auto mt-3 h-10 cursor-pointer px-4 text-xs">
               <FileSpreadsheet className="size-4" strokeWidth={2} />
@@ -189,7 +196,7 @@ export function ImportView() {
               <input
                 ref={inputRef}
                 type="file"
-                accept=".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                accept=".csv,.tsv,.txt,.xlsx,.xml,text/csv,text/tab-separated-values,text/xml,application/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 className="sr-only"
                 onChange={(event) => void handleFile(event.target.files?.[0])}
               />
@@ -374,6 +381,15 @@ export function ImportView() {
                 ))}
               </div>
             </details>
+          </div>
+
+          <div className="rounded-[4px] border border-sage/35 bg-sage-soft/60 p-4">
+            <p className="text-sm font-bold text-ink">XML de fornecedor</p>
+            <p className="mt-1 text-[0.6875rem] leading-relaxed text-ink/75">
+              Baixe o XML da NF-e/NFC-e no portal do fornecedor e envie aqui. O
+              Estokar lê itens, fornecedor, data e pagamento, e cria a compra
+              para revisão.
+            </p>
           </div>
 
           <div className="rounded-[4px] border border-line bg-cream p-4">

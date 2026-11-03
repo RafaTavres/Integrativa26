@@ -1263,7 +1263,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           productId,
           supplierId,
           paymentMethod: row.paymentMethod,
-          sourceType: "spreadsheet_import",
+          sourceType: row.sourceType ?? "spreadsheet_import",
           status: "processed",
           occurredAt: row.occurredAt,
           createdAt: now,
@@ -1319,7 +1319,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 row.dueDate ?? addDaysToDateOnly(todayDateOnly(), 14),
               status: "open",
               paymentMethod: row.paymentMethod,
-              sourceType: "spreadsheet_import",
+              sourceType: row.sourceType ?? "spreadsheet_import",
               createdAt: now,
             });
           }
@@ -1333,7 +1333,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             totalCents: row.amountCents,
             billId,
             transactionId,
-            sourceType: "spreadsheet_import",
+            sourceType: row.sourceType ?? "spreadsheet_import",
             occurredAt: row.occurredAt,
             createdAt: now,
           });
@@ -1362,7 +1362,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             paidAt: row.paid ? row.occurredAt : undefined,
             paymentMethod: row.paymentMethod,
             transactionId,
-            sourceType: "spreadsheet_import",
+            sourceType: row.sourceType ?? "spreadsheet_import",
             createdAt: now,
           });
           imported += 1;

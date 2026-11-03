@@ -241,6 +241,33 @@ export function IntegrationsView() {
                   ? " O número fica salvo só neste navegador."
                   : " O número ficará salvo só neste navegador."}
               </p>
+
+              <div className="mt-4 rounded-[4px] border border-line bg-cream p-3">
+                <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
+                  Grupos planejados
+                </p>
+                <ul className="mt-2 space-y-2 text-[0.6875rem] leading-relaxed text-ink/80">
+                  <li>
+                    <strong>Grupo de fornecedores</strong> — ofertas de preço.
+                    A loja de demonstração já lê o que o n8n grava.
+                  </li>
+                  <li>
+                    <strong>Grupo da loja</strong> — compras e vendas por texto
+                    ou áudio. A demo lê as transações gravadas pelo n8n.
+                  </li>
+                  <li>
+                    <strong>Conversa individual</strong> — registro de compra
+                    por conversa; o contrato está pronto, falta o conector.
+                  </li>
+                </ul>
+                <Link
+                  href="/whatsapp"
+                  className="mt-2 inline-flex items-center gap-1 text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
+                >
+                  Ver a loja conectada
+                  <ArrowRight className="size-3" strokeWidth={2.4} />
+                </Link>
+              </div>
             </div>
           </section>
 
@@ -250,7 +277,7 @@ export function IntegrationsView() {
                 Outros canais
               </h2>
               <span className="text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-muted">
-                2 disponíveis
+                4 disponíveis
               </span>
             </div>
             <div className="mt-2 divide-y divide-line">
@@ -265,24 +292,26 @@ export function IntegrationsView() {
               <ChannelRow
                 icon={Camera}
                 title="Foto e áudio"
-                detail="Grave áudio e transcreva no navegador. A foto ainda não passa por OCR."
+                detail="OCR de foto e transcrição de áudio no próprio aparelho."
                 status="Disponível"
                 tone="sage"
                 href="/"
               />
               <ChannelRow
                 icon={Mail}
-                title="E-mail e XML"
-                detail="O contrato existe; falta o conector que lê a caixa de entrada."
-                status="Em preparação"
-                tone="mustard"
+                title="XML de fornecedor"
+                detail="Envie o XML da NF-e/NFC-e em Importar; os itens entram como compra."
+                status="Disponível"
+                tone="sage"
+                href="/importar"
               />
               <ChannelRow
                 icon={QrCode}
                 title="QR Code da nota"
-                detail="Leitura da chave da NF-e e importação dos itens."
-                status="Em preparação"
-                tone="mustard"
+                detail="Lê o QR, consulta a SEFAZ e usa o OCR como reserva."
+                status="Disponível"
+                tone="sage"
+                href="/"
               />
             </div>
           </section>

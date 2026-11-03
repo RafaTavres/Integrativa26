@@ -1,5 +1,5 @@
 import { strFromU8, unzipSync } from "fflate";
-import type { PaymentMethod } from "./types";
+import type { PaymentMethod, SourceType } from "./types";
 
 export type ImportKind =
   | "sale"
@@ -22,6 +22,9 @@ export interface ImportRow {
   paid: boolean;
   paymentMethod: PaymentMethod;
   errors: string[];
+  /** Origem do lançamento; XML de fornecedor usa email_import. */
+  sourceType?: SourceType;
+  externalId?: string;
 }
 
 export interface ParsedSpreadsheet {

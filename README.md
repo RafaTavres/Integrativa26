@@ -4,7 +4,7 @@
 
 MVP de um sistema web responsivo para MEIs e autônomos. A tela principal responde três perguntas com palavras do dia a dia: **quanto entrou**, **quanto saiu** e **quanto sobrou**. O registro de uma venda leva uma tela só, com produto, valor e pagamento, e já baixa o estoque — exceto para serviços, que não controlam quantidade.
 
-Além do caixa, o app acompanha **fornecedores**, **compras** (com custo por fornecedor), **contas a pagar**, **retiradas** e **análises** de preço, previsão de pagamento e dinheiro parado no estoque. A compra pode ser registrada **pela foto da nota**, direto no fornecedor. O histórico pode ser trazido de uma vez por **CSV, TSV ou XLSX**. Há também uma **loja de demonstração conectada ao WhatsApp via n8n**, que mostra vendas, compras e ofertas lidas do Supabase; a tela de **integrações** continua deixando o número da sua loja preparado — sem fingir uma conexão que ainda não existe.
+Além do caixa, o app acompanha **fornecedores**, **compras** (com custo por fornecedor), **contas a pagar**, **retiradas** e **análises** de preço, previsão de pagamento e dinheiro parado no estoque. A compra pode ser registrada **pela foto da nota**, direto no fornecedor. O histórico pode ser trazido de uma vez por **CSV, TSV, XLSX ou XML de NF-e/NFC-e**. Há também uma **loja de demonstração conectada ao WhatsApp via n8n**, que mostra vendas, compras e ofertas lidas do Supabase; a tela de **integrações** continua deixando o número da sua loja preparado — sem fingir uma conexão que ainda não existe.
 
 A demo tem três ramos prontos (**confeitaria**, **barbearia** e **loja de roupas**) e troca a identidade, os produtos e os exemplos junto com o ramo. O menu da loja também abre uma **loja de roupas extra, conectada ao WhatsApp**, com os dados que o n8n gravou no Supabase.
 
@@ -96,6 +96,27 @@ A loja conectada é uma demonstração separada. O **n8n** recebe as mensagens d
 
 Para abrir a loja, a função `entrar_loja_whatsapp` no Supabase garante o vínculo da sessão com o negócio fixo `LOJA_WHATSAPP_ID` em `src/lib/supabase/workspace.ts`. A conexão do número da **sua** loja continua fora do escopo: o que existe é a leitura do que o n8n já gravou.
 
+### E-mail de fornecedor (XML)
+
+O caminho manual já funciona: em **Importar**, envie o XML da NF-e/NFC-e. O parser lê emitente, data, itens, quantidade, valor unitário, total e forma de pagamento, e cria as compras na prévia.
+
+Para o modo automático, o provedor de e-mail (Postmark, Resend, Cloudflare Email Worker ou um fluxo n8n/IMAP) deve chamar `POST /api/inbound/email` com o segredo `EMAIL_INGESTION_SECRET` e o anexo em base64:
+
+```json
+{
+  "secret": "defina-no-servidor",
+  "businessId": "id-do-negocio",
+  "messageId": "id-do-email",
+  "from": "fornecedor@exemplo.com",
+  "subject": "NF-e 123",
+  "attachments": [
+    { "filename": "nota.xml", "contentType": "application/xml", "contentBase64": "..." }
+  ]
+}
+```
+
+O endpoint valida o segredo, faz o parsing e devolve `data` e `rows`. A gravação no banco fica no conector, que pode reutilizar o mesmo importador do webapp. Sem `EMAIL_INGESTION_SECRET`, o endpoint responde `503` e nada é processado.
+
 ### Docker
 
 A imagem é multi-stage, roda como usuário sem privilégios e usa a saída
@@ -144,17 +165,17 @@ Os detalhes de VPS, HTTPS, firewall e rollback estão em [`DEPLOY.md`](DEPLOY.md
 ### Fluxos principais
 
 - **Escolha do ramo** — no menu da loja, o seletor **Confeitaria / Barbearia / Loja de roupas** troca nome, produtos, exemplos e vocabulário. Cada ramo tem seus próprios dados de demonstração.
-- **Registrar** — o botão principal e o botão fixo no rodapé abrem um hub com **Vender**, **Gasto**, **Compra**, **Retirada**, **Foto da nota**, **Áudio** e **Estoque**, além dos atalhos para **Importar planilha** e **WhatsApp e integrações**. É a porta única de entrada, para o usuário não precisar decorar onde cada coisa mora.
+- **Registrar** — o botão principal e o botão fixo no rodapé abrem um hub com **Vender**, **Gasto**, **Compra**, **Retirada**, **Foto da nota**, **Áudio** e **Estoque**, além dos atalhos para **Importar planilha ou XML** e **WhatsApp e integrações**. É a porta única de entrada, para o usuário não precisar decorar onde cada coisa mora.
 - **Venda rápida em uma tela** — “O que vendeu?”, “Quanto entrou?” e “Como pagou?”. O seletor de produto recolhe depois da escolha para os três campos caberem no celular. Itens com estoque baixam automaticamente; serviços não movimentam estoque.
 - **Gasto rápido** — descrição, valor e forma de pagamento (opcional).
 - **Fornecedores** — cadastro com telefone, e-mail e observações. A tela de cada fornecedor reúne o que falta pagar, o histórico de compras, os itens comprados e o preço praticado.
 - **Compra de mercadoria** — escolhe fornecedor, item, quantidade e custo unitário. Se for item novo, ele entra no estoque; se existir, o custo é recalculado pela média ponderada. A compra pode ser paga na hora (sai do caixa) ou ficar para pagar (vira conta a pagar).
 - **Compra pela nota (fornecedor)** — no detalhe do fornecedor, o botão **Registrar compra pela nota** abre a compra já vinculada a ele, com foto opcional do cupom para guardar o comprovante. Ao cadastrar um fornecedor novo, **Salvar e registrar nota** faz o mesmo em um passo. Com foto, o lançamento fica com `source_type = image_recognition`; sem foto, continua `manual`. A imagem não é enviada ao servidor. Para **ler os dados do cupom automaticamente**, use **Foto da nota** no hub **Registrar**.
-- **Integrações** — a rota `/integracoes` mostra o WhatsApp como **não conectado**, com todas as letras, e permite salvar o número e as regras de entrada neste navegador (`estokar:whatsapp:v1`). Também lista o que já funciona (planilha, foto, áudio) e o que está em preparação (e-mail/XML, QR Code). Nenhuma conexão é simulada.
+- **Integrações** — a rota `/integracoes` mostra o WhatsApp como **não conectado**, com todas as letras, e permite salvar o número e as regras de entrada neste navegador (`estokar:whatsapp:v1`). Também lista o que já funciona (**planilha, foto, áudio, XML e QR Code**) e o que está em preparação (grupos automáticos de WhatsApp e e-mail/XML por caixa de entrada). Nenhuma conexão é simulada.
 - **Loja do WhatsApp (n8n)** — no menu da loja, o atalho **Loja de roupa (Conectada no WhatsApp)** abre `/whatsapp` com o que o n8n gravou no Supabase: vendas e compras do grupo da loja e ofertas de fornecedores agrupadas pelo melhor preço. O app só lê esses dados; a conexão do WhatsApp é feita pelo n8n. Para voltar ao seu exemplo, use **Voltar para a minha loja**.
 - **Contas a pagar** — criadas por compra a prazo ou manualmente. O caixa **só muda no dia do pagamento**. A previsão agrupa vencidas, próximos 7 dias e “mais para frente”.
 - **Retirada** — dinheiro que você tira do caixa para uso pessoal. Entra em “Saiu” e no extrato com o rótulo **retirada**, mas não é despesa do negócio nem conta a pagar.
-- **Importar planilha** — CSV, TSV ou XLSX com vendas, gastos, compras, contas e retiradas. Mostra prévia, valida linha por linha e não mexe no estoque atual. As compras importadas alimentam o histórico de preços por fornecedor.
+- **Importar planilha ou XML** — CSV, TSV, XLSX ou o XML de uma NF-e/NFC-e com vendas, gastos, compras, contas e retiradas. O XML vira uma compra por item, com fornecedor, data, quantidade e pagamento; o histórico alimenta os preços por fornecedor. Mostra prévia, valida linha por linha e não mexe no estoque atual.
 - **Análises** — previsão de pagamento, comparação de preço do mesmo item entre fornecedores, itens encalhados com o valor parado e resumo de retiradas.
 - **Foto da nota** — tira ou escolhe a foto do cupom/comprovante; o app lê o texto no próprio aparelho com **Tesseract.js em português**, separa fornecedor, itens, quantidade, custo, total, data, CNPJ e forma de pagamento, e **só então** abre a tela de conferência. Se a foto tiver o **QR Code da NFC-e**, o app lê o código e tenta carregar os itens oficiais direto do portal da SEFAZ; se o portal não responder, continua com a leitura da foto. Cada item é comparado com o estoque: os que já existem aparecem como **No estoque**, com o nome cadastrado, e os demais como **Produto novo**. Você corrige o que precisar, escolhe entre **compra** (entra no estoque e no custo) e **venda** (baixa estoque e entra no caixa) e confirma. A imagem não é enviada nem guardada no servidor; o lançamento fica com `source_type = image_recognition`. Se a leitura não render, **Prefiro digitar sem foto** abre o mesmo formulário vazio e salva como `manual`.
 - **Áudio** — grava de verdade pelo microfone do navegador (`MediaRecorder`), transcreve em português com a Web Speech API quando disponível e permite corrigir o texto. O rascunho nasce como `pending_review` com `source_type = audio_transcription`; o áudio fica só na memória da página e não é enviado ao servidor.
@@ -434,11 +455,11 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 
 ### Integrações futuras
 
-- **Áudio**: guardar a gravação no bucket privado `ingestion`, transcrever com Whisper no servidor e extrair produto/quantidade/valor/pagamento com um modelo mais robusto que o parser atual do navegador.
+- **Áudio**: guardar a gravação no bucket privado `ingestion`, transcrever com Whisper no servidor e extrair produto/quantidade/valor/pagamento com um modelo mais robusto que o Web Speech atual.
 - **Foto**: Vision para ler cupom, comanda ou comprovante; `extracted_payload` guarda o JSON bruto.
-- **WhatsApp**: webhook recebe a mensagem, cria um `ingestion_event` com `whatsapp_import` e segue o mesmo pipeline.
-- **E-mail/XML**: conector server-side grava a NF-e em `ingestion_events` com `email_import`; o parser reaproveita o mesmo envelope.
-- **QR Code/SEFAZ**: leitura do código fiscal grava `qr_code` e usa o mesmo rascunho revisável.
+- **WhatsApp**: webhook recebe a mensagem, cria um `ingestion_event` com `whatsapp_import` e segue o mesmo pipeline. A demo atual já lê os grupos via n8n.
+- **E-mail/XML**: o parser de XML e a importação manual já funcionam; falta o worker que monitora a caixa de entrada e grava a NF-e em `ingestion_events` com `email_import`.
+- **QR Code/SEFAZ**: implementado para QR de NFC-e, com consulta server-side ao portal `.gov.br` e fallback para OCR.
 - **Fila**: Edge Function ou worker processa, atualiza `ingestion_events` e cria o lançamento apenas quando a confiança passa do limite.
 - **Revisão**: tudo abaixo do limite nasce `pending_review`; a interface de conferência já existe no MVP.
 
@@ -471,14 +492,14 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - O modo privado pode bloquear o `localStorage` e a sessão.
 - A foto não é armazenada: o OCR de texto roda no próprio navegador e a imagem não sai do aparelho. O reconhecimento é de texto, não de imagem (não identifica objetos).
 - A consulta por QR Code depende do portal da SEFAZ do estado. Alguns portais usam captcha ou bloqueiam acesso automático; nesses casos o app mantém a leitura da foto e oferece o link oficial.
-- O WhatsApp ainda não está conectado para a sua loja: a tela de integrações só salva o número e as preferências neste navegador. A loja de demonstração em `/whatsapp` é alimentada pelo n8n e pelas tabelas `n8n_*` do Supabase. E-mail/XML e QR Code também não têm conector ativo; a tabela e o contrato de entrada já estão prontos, mas a integração fica para a próxima etapa.
+- O WhatsApp ainda não está conectado para a sua loja: a tela de integrações só salva o número e as preferências neste navegador. A loja de demonstração em `/whatsapp` é alimentada pelo n8n e pelas tabelas `n8n_*` do Supabase. A importação manual de XML já funciona; falta o worker que monitora a caixa de entrada automaticamente.
 
 ### Próximos passos para produção
 
 1. Criar o bucket privado `ingestion` e as políticas de Storage para áudios e fotos.
 2. Implementar o pipeline de IA em Edge Functions (Whisper/Vision) gravando em `ingestion_events`.
 3. Adicionar upgrade de conta anônima para e-mail/telefone, recuperando o mesmo negócio em outros aparelhos.
-4. Conectar o WhatsApp da própria loja e o e-mail/XML ao contrato de `ingestion_events` (o webapp já aceita o formato).
+4. Conectar o WhatsApp da própria loja e o worker de e-mail/XML ao contrato de `ingestion_events`; a importação manual de XML já está pronta.
 5. Transformar o app em PWA com fila offline e sincronização.
 6. Ampliar a leitura de QR Code/SEFAZ para os estados que usam captcha ou layouts diferentes do DANFE.
 

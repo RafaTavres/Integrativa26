@@ -1506,7 +1506,7 @@ async function insertImportTransaction(
       product_id: overrides.productId ?? null,
       supplier_id: overrides.supplierId ?? null,
       payment_method: row.paymentMethod,
-      source_type: "spreadsheet_import",
+      source_type: row.sourceType ?? "spreadsheet_import",
       status: "processed",
       occurred_at: row.occurredAt,
     })
@@ -1597,7 +1597,7 @@ export async function importSpreadsheetRows(
             : null,
         supplier_id: null,
         payment_method: row.paymentMethod,
-        source_type: "spreadsheet_import",
+        source_type: row.sourceType ?? "spreadsheet_import",
         status: "processed",
         occurred_at: row.occurredAt,
       })),
@@ -1649,7 +1649,7 @@ export async function importSpreadsheetRows(
               due_date: row.dueDate ?? dateOnly(14),
               status: "open",
               payment_method: row.paymentMethod,
-              source_type: "spreadsheet_import",
+              source_type: row.sourceType ?? "spreadsheet_import",
             })
             .select("id")
             .single();
@@ -1670,7 +1670,7 @@ export async function importSpreadsheetRows(
           total_cents: row.amountCents,
           bill_id: billId,
           transaction_id: transactionId,
-          source_type: "spreadsheet_import",
+          source_type: row.sourceType ?? "spreadsheet_import",
           occurred_at: row.occurredAt,
         });
         if (purchaseError) {
@@ -1706,7 +1706,7 @@ export async function importSpreadsheetRows(
           paid_at: row.paid ? row.occurredAt : null,
           payment_method: row.paymentMethod,
           transaction_id: transactionId,
-          source_type: "spreadsheet_import",
+          source_type: row.sourceType ?? "spreadsheet_import",
         });
         if (error) {
           errors.push(`Linha ${row.line}: conta não foi salva.`);

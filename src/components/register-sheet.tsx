@@ -172,10 +172,10 @@ export function RegisterSheet({ onClose }: RegisterSheetProps) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[0.8125rem] font-bold text-ink">
-              Importar planilha
+              Importar planilha ou XML
             </span>
             <span className="mt-0.5 block text-[0.6875rem] text-muted">
-              Traga vendas, gastos e compras de uma vez
+              Traga vendas, gastos e compras, ou o XML da NF-e
             </span>
           </span>
           <span className="badge bg-ink text-cream">CSV ou XLSX</span>
