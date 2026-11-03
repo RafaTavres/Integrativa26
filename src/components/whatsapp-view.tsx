@@ -15,7 +15,6 @@ import {
   Wallet,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
-import { useActions } from "./action-provider";
 import { dayLabel, formatBRL, formatTime } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type {
@@ -105,8 +104,8 @@ export function WhatsappView() {
     cashCents,
     openBills,
     products,
+    entrarNaLojaWhatsapp,
   } = useApp();
-  const { openMore } = useActions();
   const [dados, setDados] = useState<DadosWhatsapp | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
@@ -114,6 +113,7 @@ export function WhatsappView() {
     "todos",
   );
   const [syncing, setSyncing] = useState(false);
+  const [entering, setEntering] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const busyRef = useRef(false);
 
@@ -205,6 +205,23 @@ export function WhatsappView() {
       })
     : null;
 
+  async function enterDemo() {
+    if (entering) return;
+    setEntering(true);
+    setErro(null);
+    try {
+      await entrarNaLojaWhatsapp();
+    } catch (motivo) {
+      setErro(
+        motivo instanceof Error
+          ? motivo.message
+          : "Não conseguimos abrir a demo do WhatsApp.",
+      );
+    } finally {
+      setEntering(false);
+    }
+  }
+
   const produtosFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     if (!termo) return produtos;
@@ -227,15 +244,25 @@ export function WhatsappView() {
           </h1>
           <p className="mx-auto mt-1 max-w-[22rem] text-xs leading-relaxed text-muted">
             O que chega pelo WhatsApp fica na Loja de roupas de demonstração.
-            Abra ela no menu da sua loja para ver vendas, compras e ofertas.
+            Entre para ver vendas, compras e ofertas.
           </p>
           <button
             type="button"
-            onClick={openMore}
-            className="btn btn-primary mt-4"
+            onClick={() => void enterDemo()}
+            disabled={entering}
+            className="btn btn-primary mt-4 disabled:opacity-60"
           >
-            Abrir menu da loja
+            {entering ? "Entrando…" : "Entrar na demo do WhatsApp"}
           </button>
+          <p className="mx-auto mt-3 max-w-[22rem] text-[0.6875rem] leading-relaxed text-muted">
+            Depois, você volta a esta tela pelo menu <strong>Sua loja</strong> →
+            <strong> Loja de roupas (WhatsApp)</strong>.
+          </p>
+          {erro ? (
+            <p className="mx-auto mt-3 max-w-[22rem] text-xs text-terracotta-dark">
+              {erro}
+            </p>
+          ) : null}
         </div>
       </div>
     );

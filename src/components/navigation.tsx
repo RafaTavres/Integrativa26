@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Eye,
   Home,
+  MessageCircle,
   MoreHorizontal,
   Plus,
   ReceiptText,
@@ -30,6 +31,7 @@ export function TopBar() {
     { href: "/contas", label: "Contas", icon: ReceiptText },
     { href: "/fornecedores", label: "Fornecedores", icon: Truck },
     { href: "/analises", label: "Análises", icon: TrendingUp },
+    { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
   ];
 
   return (

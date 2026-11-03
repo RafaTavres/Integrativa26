@@ -220,7 +220,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
               ? "Abrindo…"
               : naLojaWhatsapp
                 ? "Voltar para a minha loja"
-                : "Loja de roupas (WhatsApp)"}
+                : "Abrir demo do WhatsApp"}
           </span>
           {naLojaWhatsapp ? null : (
             <span className="badge flex-none bg-sage-soft text-sage-dark">
@@ -307,6 +307,11 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
               { label: "Análises", href: "/analises" },
               { label: "Importar planilha/XML", href: "/importar" },
               {
+                label: "Loja do WhatsApp (demo)",
+                href: "/whatsapp",
+                status: naLojaWhatsapp ? "Aberta" : "Demo",
+              },
+              {
                 label: "WhatsApp e integrações",
                 href: naLojaWhatsapp ? "/whatsapp" : "/integracoes",
                 status: naLojaWhatsapp ? "Demo n8n" : "Não conectado",
@@ -326,7 +331,7 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
                   <span
                     className={cn(
                       "text-[0.625rem] font-bold",
-                      item.status === "Demo n8n"
+                      ["Demo n8n", "Aberta", "Demo"].includes(item.status)
                         ? "text-sage-dark"
                         : "text-mustard-dark",
                     )}
