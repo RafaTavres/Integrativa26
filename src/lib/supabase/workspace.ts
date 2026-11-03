@@ -1480,7 +1480,12 @@ export async function createPendingSale(
 // ---------------------------------------------------------------------------
 
 function normalizeName(value: string): string {
-  return value.trim().toLowerCase();
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 async function insertImportTransaction(
@@ -1530,16 +1535,31 @@ export async function importSpreadsheetRows(
 
   const { data: productRows, error: productError } = await client
     .from("products")
-    .select("id, name")
+    .select(
+      "id, name, stock, cost_cents, track_stock, unit, unit_plural, min_stock, price_cents, supplier_id",
+    )
     .eq("business_id", businessId);
   if (productError) {
     throw toCloudError(productError, "Não conseguimos carregar os itens.");
   }
+  type ImportProductRow = {
+    id: string;
+    name: string;
+    stock: number | string;
+    cost_cents: number;
+    track_stock: boolean;
+    unit: string;
+    unit_plural: string;
+    min_stock: number;
+    price_cents: number;
+    supplier_id: string | null;
+  };
+  const products = (productRows ?? []) as ImportProductRow[];
+  const productByName = new Map(
+    products.map((row) => [normalizeName(row.name), row]),
+  );
   const productIdByName = new Map(
-    ((productRows ?? []) as Array<{ id: string; name: string }>).map((row) => [
-      normalizeName(row.name),
-      row.id,
-    ]),
+    products.map((row) => [normalizeName(row.name), row.id]),
   );
 
   const { data: supplierRows, error: supplierError } = await client
@@ -1573,6 +1593,88 @@ export async function importSpreadsheetRows(
     const id = (data as { id: string }).id;
     supplierIdByName.set(key, id);
     return id;
+  }
+
+  async function applyStockToProduct(
+    row: ImportRow,
+    supplierId: string | null,
+  ): Promise<string | null> {
+    if (!row.applyStock) {
+      const name = row.productName ?? row.description;
+      return productIdByName.get(normalizeName(name)) ?? null;
+    }
+
+    const name = (row.productName ?? row.description).trim();
+    if (!name) return null;
+    const key = normalizeName(name);
+    const quantity = row.quantity ?? 1;
+    const existing = productByName.get(key);
+
+    if (existing) {
+      if (!existing.track_stock) return existing.id;
+      const currentStock = toNumber(existing.stock);
+      const newStock = currentStock + quantity;
+      const newCost = Math.round(
+        (currentStock * toNumber(existing.cost_cents) + row.amountCents) /
+          Math.max(0.0001, newStock),
+      );
+      const { error } = await client
+        .from("products")
+        .update({
+          stock: newStock,
+          cost_cents: newCost,
+          supplier_id: supplierId,
+        })
+        .eq("id", existing.id);
+      if (error) {
+        errors.push(`Linha ${row.line}: estoque não foi atualizado.`);
+        return existing.id;
+      }
+      existing.stock = newStock;
+      existing.cost_cents = newCost;
+      existing.supplier_id = supplierId;
+      return existing.id;
+    }
+
+    const unit = row.unit?.trim() || "un";
+    const unitCost = Math.round(row.amountCents / Math.max(0.0001, quantity));
+    const priceCents = Math.max(100, Math.ceil((unitCost * 1.8) / 100) * 100);
+    const { data, error } = await client
+      .from("products")
+      .insert({
+        business_id: businessId,
+        name,
+        unit,
+        unit_plural: unit,
+        stock: quantity,
+        min_stock: 2,
+        cost_cents: unitCost,
+        price_cents: priceCents,
+        track_stock: true,
+        supplier_id: supplierId,
+      })
+      .select("id, name")
+      .single();
+    if (error) {
+      errors.push(`Linha ${row.line}: produto não foi criado.`);
+      return null;
+    }
+
+    const created = data as { id: string; name: string };
+    productIdByName.set(key, created.id);
+    productByName.set(key, {
+      id: created.id,
+      name: created.name,
+      stock: quantity,
+      cost_cents: unitCost,
+      track_stock: true,
+      unit,
+      unit_plural: unit,
+      min_stock: 2,
+      price_cents: priceCents,
+      supplier_id: supplierId,
+    });
+    return created.id;
   }
 
   // Vendas, gastos e retiradas entram em um único lote.
@@ -1615,8 +1717,7 @@ export async function importSpreadsheetRows(
       if (row.kind === "purchase") {
         const supplierId = await ensureSupplier(row.supplierName);
         const productName = row.productName ?? row.description;
-        const productId =
-          productIdByName.get(normalizeName(productName)) ?? null;
+        const productId = await applyStockToProduct(row, supplierId);
         const quantity = row.quantity ?? 1;
 
         let billId: string | null = null;
@@ -1676,6 +1777,26 @@ export async function importSpreadsheetRows(
         if (purchaseError) {
           errors.push(`Linha ${row.line}: histórico de compra não foi salvo.`);
           continue;
+        }
+        if (row.applyStock && productId) {
+          const { error: logError } = await client
+            .from("inventory_logs")
+            .insert({
+              business_id: businessId,
+              product_id: productId,
+              direction: "in",
+              quantity,
+              unit_cost_cents: Math.round(row.amountCents / quantity),
+              transaction_id: transactionId,
+              source_type: row.sourceType ?? "spreadsheet_import",
+              status: "processed",
+              occurred_at: row.occurredAt,
+            });
+          if (logError) {
+            errors.push(
+              `Linha ${row.line}: entrada de estoque não foi registrada.`,
+            );
+          }
         }
         imported += 1;
         continue;

@@ -67,6 +67,16 @@ const LEGACY_STORAGE_KEYS = [
   "meu-caixa:demo:v1",
 ];
 
+/** Nome de produto/fornecedor sem acento, caixa ou espaço extra. */
+function normalizeName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 interface SaleInput {
   productId: string;
   quantity: number;
@@ -312,7 +322,7 @@ function migrateLegacyState(state: LegacyDemoState): DemoState {
   const seed = createSeedState(state.segmentId);
   const productIdByName = new Map(
     state.products.map((product) => [
-      product.name.trim().toLowerCase(),
+      normalizeName(product.name),
       product.id,
     ]),
   );
@@ -320,7 +330,7 @@ function migrateLegacyState(state: LegacyDemoState): DemoState {
   const purchases = seed.purchases.map((purchase) => ({
     ...purchase,
     productId: purchase.productName
-      ? (productIdByName.get(purchase.productName.trim().toLowerCase()) ??
+      ? (productIdByName.get(normalizeName(purchase.productName)) ??
         undefined)
       : purchase.productId,
   }));
@@ -665,7 +675,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         state.products.find(
           (product) =>
             product.trackStock &&
-            product.name.toLowerCase() === cleanName.toLowerCase(),
+            normalizeName(product.name) === normalizeName(cleanName),
         );
 
       const active = cloudRef.current;
@@ -684,7 +694,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const product =
           workspace?.state.products.find((item) => item.id === productId) ??
           workspace?.state.products.find(
-            (item) => item.name.toLowerCase() === cleanName.toLowerCase(),
+            (item) => normalizeName(item.name) === normalizeName(cleanName),
           );
         if (!product) throw new Error("Não conseguimos carregar o item salvo.");
         const transaction = input.totalCostCents
@@ -832,7 +842,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         state.products.find(
           (product) =>
             product.trackStock &&
-            product.name.toLowerCase() === cleanName.toLowerCase(),
+            normalizeName(product.name) === normalizeName(cleanName),
         );
 
       let product: Product;
@@ -964,7 +974,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!name) throw new Error("Diga o nome do fornecedor.");
       if (
         state.suppliers.some(
-          (supplier) => supplier.name.toLowerCase() === name.toLowerCase(),
+          (supplier) => normalizeName(supplier.name) === normalizeName(name),
         )
       ) {
         throw new Error("Já existe um fornecedor com esse nome.");
@@ -1011,7 +1021,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         state.suppliers.some(
           (supplier) =>
             supplier.id !== supplierId &&
-            supplier.name.toLowerCase() === name.toLowerCase(),
+            normalizeName(supplier.name) === normalizeName(name),
         )
       ) {
         throw new Error("Já existe um fornecedor com esse nome.");
@@ -1214,26 +1224,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const now = new Date().toISOString();
       const suppliers = [...state.suppliers];
+      const products = [...state.products];
       const supplierIdByName = new Map(
         suppliers.map((supplier) => [
-          supplier.name.trim().toLowerCase(),
+          normalizeName(supplier.name),
           supplier.id,
         ]),
       );
       const productIdByName = new Map(
         state.products.map((product) => [
-          product.name.trim().toLowerCase(),
+          normalizeName(product.name),
           product.id,
         ]),
       );
       const transactions = [...state.transactions];
       const bills = [...state.bills];
       const purchases = [...state.purchases];
+      const inventoryLogs = [...state.inventoryLogs];
       let imported = 0;
 
       const ensureSupplier = (name?: string): string | undefined => {
         if (!name?.trim()) return undefined;
-        const key = name.trim().toLowerCase();
+        const key = normalizeName(name);
         const existing = supplierIdByName.get(key);
         if (existing) return existing;
         const supplier: Supplier = {
@@ -1244,6 +1256,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
         suppliers.push(supplier);
         supplierIdByName.set(key, supplier.id);
         return supplier.id;
+      };
+
+      const applyStockToProduct = (
+        row: ImportRow,
+        supplierId?: string,
+      ): string | undefined => {
+        if (!row.applyStock) return undefined;
+        const name = (row.productName ?? row.description).trim();
+        if (!name) return undefined;
+        const key = normalizeName(name);
+        const quantity = row.quantity ?? 1;
+        const existingId = productIdByName.get(key);
+        const product = existingId
+          ? products.find((item) => item.id === existingId)
+          : undefined;
+
+        if (product) {
+          if (!product.trackStock) return product.id;
+          const newStock = product.stock + quantity;
+          const updated: Product = {
+            ...product,
+            stock: newStock,
+            costCents: Math.round(
+              (product.stock * product.costCents + row.amountCents) /
+                Math.max(0.0001, newStock),
+            ),
+            supplierId: supplierId ?? product.supplierId,
+          };
+          const index = products.findIndex((item) => item.id === product.id);
+          products[index] = updated;
+          return updated.id;
+        }
+
+        const unit = row.unit?.trim() || "un";
+        const unitCost = Math.round(
+          row.amountCents / Math.max(0.0001, quantity),
+        );
+        const created: Product = {
+          id: uid("product"),
+          name,
+          unit,
+          unitPlural: unit,
+          stock: quantity,
+          minStock: 2,
+          costCents: unitCost,
+          priceCents: Math.max(100, Math.ceil((unitCost * 1.8) / 100) * 100),
+          trackStock: true,
+          supplierId,
+          createdAt: now,
+        };
+        products.push(created);
+        productIdByName.set(key, created.id);
+        return created.id;
       };
 
       const addTransaction = (
@@ -1283,7 +1348,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             row.kind,
             undefined,
             row.kind === "sale" && row.productName
-              ? productIdByName.get(row.productName.trim().toLowerCase())
+              ? productIdByName.get(normalizeName(row.productName))
               : undefined,
           );
           imported += 1;
@@ -1293,9 +1358,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (row.kind === "purchase") {
           const supplierId = ensureSupplier(row.supplierName);
           const productName = row.productName ?? row.description;
-          const productId = productIdByName.get(
-            productName.trim().toLowerCase(),
-          );
+          const productId =
+            applyStockToProduct(row, supplierId) ??
+            productIdByName.get(normalizeName(productName));
           const quantity = row.quantity ?? 1;
           const transactionId = row.paid
             ? addTransaction(
@@ -1337,6 +1402,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
             occurredAt: row.occurredAt,
             createdAt: now,
           });
+          if (row.applyStock && productId) {
+            inventoryLogs.unshift({
+              id: uid("log"),
+              productId,
+              direction: "in",
+              quantity,
+              unitCostCents: Math.round(row.amountCents / quantity),
+              transactionId,
+              sourceType: row.sourceType ?? "spreadsheet_import",
+              status: "processed",
+              occurredAt: row.occurredAt,
+            });
+          }
           imported += 1;
           continue;
         }
@@ -1371,10 +1449,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       setState((previous) => ({
         ...previous,
+        products,
         suppliers,
         transactions,
         bills,
         purchases,
+        inventoryLogs,
       }));
 
       return {

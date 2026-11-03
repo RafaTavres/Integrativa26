@@ -159,6 +159,8 @@ export function nfeXmlToImportRows(data: NfeXmlData): ImportRow[] {
     paymentMethod: data.paymentMethod ?? "other",
     errors: [],
     sourceType: "email_import",
+    unit: item.unit,
+    applyStock: true,
   }));
 }
 

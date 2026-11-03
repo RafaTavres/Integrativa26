@@ -25,6 +25,10 @@ export interface ImportRow {
   /** Origem do lançamento; XML de fornecedor usa email_import. */
   sourceType?: SourceType;
   externalId?: string;
+  /** Unidade do item (UN, KG…) quando o XML traz essa informação. */
+  unit?: string;
+  /** Dá entrada no estoque e recalcula o custo médio (XML de compra). */
+  applyStock?: boolean;
 }
 
 export interface ParsedSpreadsheet {

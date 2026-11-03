@@ -347,8 +347,9 @@ export function ImportView() {
                 )}
               </button>
               <p className="mt-2 text-center text-[0.625rem] text-muted">
-                O estoque atual não muda. Compras entram como histórico de preço
-                e contas a pagar.
+                {parsed.rows.some((row) => row.applyStock)
+                  ? "As compras deste XML dão entrada no estoque e recalculam o custo médio."
+                  : "O estoque atual não muda. Compras entram como histórico de preço e contas a pagar."}
               </p>
             </div>
           ) : null}
