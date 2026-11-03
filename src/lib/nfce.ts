@@ -26,7 +26,7 @@ export function isAllowedNfceUrl(url: URL): boolean {
   if (url.username || url.password || url.port) return false;
   const host = url.hostname.toLowerCase();
   if (!host.endsWith(".gov.br")) return false;
-  return /(nfce|nfe|fazenda|sefaz|receita|dfe|sefin|sefa)/.test(host);
+  return /(nfce|nfe|fazenda|faz|sefaz|sef|sefin|sefa|receita|dfe)/.test(host);
 }
 
 /**

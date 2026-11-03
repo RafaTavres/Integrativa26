@@ -1002,7 +1002,7 @@ function parseReceiptText(text: string, ocrConfidence: number): ReceiptDraft {
   };
 }
 
-async function decodeQrCode(
+async function scanQrCanvas(
   canvas: HTMLCanvasElement,
 ): Promise<string | undefined> {
   try {
@@ -1017,6 +1017,55 @@ async function decodeQrCode(
   } catch {
     return undefined;
   }
+}
+
+async function decodeQrCode(
+  canvas: HTMLCanvasElement,
+): Promise<string | undefined> {
+  const direct = await scanQrCanvas(canvas);
+  if (direct) return direct;
+
+  // O QR de cupom costuma ficar na parte de baixo e é pequeno na foto
+  // inteira. Recortar a metade inferior e ampliar para 1600 px faz o jsQR
+  // enxergar os módulos. O recorte superior é a reserva para notas em que o
+  // QR aparece no topo.
+  const crops = [
+    { top: 0.45, height: 0.55 },
+    { top: 0, height: 0.55 },
+  ];
+  for (const crop of crops) {
+    const sourceTop = Math.round(canvas.height * crop.top);
+    const sourceHeight = Math.round(canvas.height * crop.height);
+    const targetWidth = 1600;
+    const targetHeight = Math.max(
+      1,
+      Math.round(sourceHeight * (targetWidth / canvas.width)),
+    );
+
+    const region = document.createElement("canvas");
+    region.width = targetWidth;
+    region.height = targetHeight;
+    const context = region.getContext("2d", { willReadFrequently: true });
+    if (!context) continue;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(
+      canvas,
+      0,
+      sourceTop,
+      canvas.width,
+      sourceHeight,
+      0,
+      0,
+      targetWidth,
+      targetHeight,
+    );
+
+    const found = await scanQrCanvas(region);
+    if (found) return found;
+  }
+
+  return undefined;
 }
 
 export async function readReceiptPhoto(
