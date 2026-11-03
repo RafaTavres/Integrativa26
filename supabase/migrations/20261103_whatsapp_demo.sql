@@ -131,6 +131,65 @@ begin
 
   perform pg_advisory_xact_lock(2147483001);
 
+  -- Compatibilidade com o fluxo antigo do n8n (n8n_me_group). Se uma
+  -- mensagem nova chegar só nessa tabela, ela é promovida para as tabelas
+  -- canônicas antes da reconstrução.
+  insert into public.n8n_whatsapp_transactions (
+    business_id, product_name, quantity, amount_cents, unit_price_cents,
+    supplier_name, source, raw_input, created_at
+  )
+  select
+    p_business_id,
+    coalesce(nullif(btrim(g.product_name), ''), 'Venda'),
+    coalesce(g.quantity, 1),
+    greatest(0, round(coalesce(g.product_price, 0) * 100)::integer),
+    greatest(0, round(coalesce(g.product_price, 0) * 100)::integer),
+    null,
+    'whatsapp_import',
+    g.raw_input,
+    g.created_at
+  from public.n8n_me_group g
+  where g.sale = true
+    and coalesce(g.product_price, 0) > 0
+    and not exists (
+      select 1
+        from public.n8n_whatsapp_transactions t
+       where t.business_id = p_business_id
+         and lower(btrim(t.product_name)) = lower(btrim(g.product_name))
+         and abs(extract(epoch from (t.created_at - g.created_at))) < 300
+    );
+
+  insert into public.n8n_whatsapp_purchases (
+    business_id, product_name, quantity, total_cents, unit_cost_cents,
+    supplier_name, source, raw_input, created_at
+  )
+  select
+    p_business_id,
+    coalesce(nullif(btrim(g.product_name), ''), 'Compra'),
+    coalesce(g.quantity, 1),
+    greatest(0, round(coalesce(g.product_price, 0) * 100)::integer),
+    greatest(
+      0,
+      round(
+        (coalesce(g.product_price, 0) * 100) /
+          greatest(coalesce(g.quantity, 1), 1)
+      )::integer
+    ),
+    nullif(btrim(coalesce(g.provider_name, '')), ''),
+    'whatsapp_import',
+    g.raw_input,
+    g.created_at
+  from public.n8n_me_group g
+  where g.buy = true
+    and coalesce(g.product_price, 0) > 0
+    and not exists (
+      select 1
+        from public.n8n_whatsapp_purchases t
+       where t.business_id = p_business_id
+         and lower(btrim(t.product_name)) = lower(btrim(g.product_name))
+         and abs(extract(epoch from (t.created_at - g.created_at))) < 300
+    );
+
   -- Fornecedores: ofertas e compras.
   for r in
     select
