@@ -103,7 +103,7 @@ export function TopBar() {
 
 export function BottomNav() {
   const pathname = usePathname();
-  const { segment, readOnly } = useApp();
+  const { segment, readOnly, naLojaWhatsapp } = useApp();
   const { openRegister, openMore } = useActions();
 
   const leftItem = { href: "/", label: "Início", icon: Home };
@@ -171,7 +171,7 @@ export function BottomNav() {
               <Plus className="size-5" strokeWidth={2.6} />
             )}
           </span>
-          {readOnly ? "Demo" : "Registrar"}
+          {readOnly ? (naLojaWhatsapp ? "Demo" : "Offline") : "Registrar"}
         </button>
 
         <Link
