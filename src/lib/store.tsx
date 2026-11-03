@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { usePathname } from "next/navigation";
 import { createBusiness, createSeedState } from "./seed";
 import { SEGMENTS, SEGMENT_LIST, isSegmentId } from "./segments";
 import type { SegmentProfile } from "./segments";
@@ -476,6 +477,7 @@ function describeCloudError(error: unknown): string {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [state, setState] = useState<DemoState>(() =>
     createSeedState("confeitaria"),
   );
@@ -1943,6 +1945,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refresh();
     return carregarDadosWhatsapp(active.client, active.businessId);
   }, [refresh]);
+
+  // Fora da página do WhatsApp, mantém home/contas/estoque atualizados
+  // enquanto a demo estiver aberta. A própria página /whatsapp tem o seu ciclo.
+  useEffect(() => {
+    if (
+      !ready ||
+      cloudStatus !== "ready" ||
+      cloudBusiness?.id !== LOJA_WHATSAPP_ID ||
+      pathname === "/whatsapp"
+    ) {
+      return;
+    }
+
+    let active = true;
+    const run = async () => {
+      if (!active || document.visibilityState !== "visible") return;
+      try {
+        await sincronizarWhatsapp();
+      } catch {
+        // A página do WhatsApp mostra o erro detalhado quando for aberta.
+      }
+    };
+
+    void run();
+    const interval = window.setInterval(run, 20_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [
+    ready,
+    cloudStatus,
+    cloudBusiness?.id,
+    pathname,
+    sincronizarWhatsapp,
+  ]);
 
   const createAudioDraft = useCallback(
     async (input: AudioDraftInput): Promise<Transaction> => {

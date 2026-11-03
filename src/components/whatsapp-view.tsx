@@ -110,6 +110,16 @@ export function WhatsappView() {
 
   useEffect(() => {
     if (!ready || !naLojaWhatsapp) return;
+    let active = true;
+
+    // Mostra as mensagens do n8n imediatamente; a sincronização completa
+    // (caixa/estoque/contas) roda em seguida.
+    carregarWhatsapp()
+      .then((resultado) => {
+        if (active) setDados((atual) => atual ?? resultado);
+      })
+      .catch(() => undefined);
+
     void refresh(false);
 
     const interval = window.setInterval(() => {
@@ -122,10 +132,11 @@ export function WhatsappView() {
     document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
+      active = false;
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [ready, naLojaWhatsapp, refresh]);
+  }, [ready, naLojaWhatsapp, refresh, carregarWhatsapp]);
 
   const ofertas = useMemo(() => dados?.ofertas ?? [], [dados]);
   const movimentos = useMemo(() => dados?.movimentos ?? [], [dados]);
