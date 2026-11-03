@@ -320,6 +320,10 @@ export function WhatsappView() {
           <strong className="text-sm text-ink tabular">{products.length}</strong>
         </Link>
       </div>
+      <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted">
+        Vendas entram no caixa na hora. Compras do grupo entram como contas a
+        pagar; o caixa só muda quando você paga.
+      </p>
 
       {erro ? (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-[4px] border border-terracotta/30 bg-terracotta-soft p-4 text-xs text-ink">
