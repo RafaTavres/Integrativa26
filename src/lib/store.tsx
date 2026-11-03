@@ -44,6 +44,7 @@ import {
   replaceWorkspace,
   saveSupplier,
   setProductSupplier as setCloudProductSupplier,
+  syncWhatsappDemo,
   updateProduct as updateCloudProduct,
   type DadosWhatsapp,
   type Workspace,
@@ -225,6 +226,7 @@ interface AppContextValue {
   entrarNaLojaWhatsapp: () => Promise<void>;
   voltarParaMinhaLoja: () => Promise<void>;
   carregarWhatsapp: () => Promise<DadosWhatsapp>;
+  sincronizarWhatsapp: () => Promise<DadosWhatsapp>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -1930,6 +1932,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return carregarDadosWhatsapp(active.client, active.businessId);
   }, []);
 
+  const sincronizarWhatsapp = useCallback(async (): Promise<DadosWhatsapp> => {
+    const active = cloudRef.current;
+    if (!active) return { movimentos: [], ofertas: [] };
+    if (active.businessId !== LOJA_WHATSAPP_ID) {
+      return carregarDadosWhatsapp(active.client, active.businessId);
+    }
+
+    await syncWhatsappDemo(active.client, active.businessId);
+    await refresh();
+    return carregarDadosWhatsapp(active.client, active.businessId);
+  }, [refresh]);
+
   const createAudioDraft = useCallback(
     async (input: AudioDraftInput): Promise<Transaction> => {
       ensureWritable(cloudRef.current, cloudStatusRef.current);
@@ -2156,6 +2170,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       entrarNaLojaWhatsapp,
       voltarParaMinhaLoja,
       carregarWhatsapp,
+      sincronizarWhatsapp,
     }),
     [
       business,
@@ -2201,6 +2216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       entrarNaLojaWhatsapp,
       voltarParaMinhaLoja,
       carregarWhatsapp,
+      sincronizarWhatsapp,
     ],
   );
 

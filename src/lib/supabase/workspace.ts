@@ -902,16 +902,32 @@ function paraMovimento(
   row: MovimentoWhatsappRow,
   tipo: MovimentoWhatsapp["tipo"],
 ): MovimentoWhatsapp {
+  const quantity = Number(row.quantity);
   return {
     id: row.id,
     tipo,
     produto: row.product_name,
-    quantidade: Number(row.quantity),
+    quantidade: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
     totalCents: row.amount_cents ?? row.total_cents ?? 0,
     fornecedor: row.supplier_name,
     porAudio: row.source === "audio",
     criadoEm: row.created_at,
   };
+}
+
+export async function syncWhatsappDemo(
+  client: SupabaseClient,
+  businessId: string,
+): Promise<void> {
+  const { error } = await client.rpc("sync_whatsapp_demo", {
+    p_business_id: businessId,
+  });
+  if (error) {
+    throw toCloudError(
+      error,
+      "Não conseguimos atualizar a demo do WhatsApp.",
+    );
+  }
 }
 
 export async function abrirLojaWhatsapp(

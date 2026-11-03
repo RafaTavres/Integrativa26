@@ -357,7 +357,9 @@ Cada navegador cria uma sessão anônima própria (`estokar:auth` no `localStora
 
 ### Loja de demonstração do WhatsApp
 
-A loja `LOJA_WHATSAPP_ID` é compartilhada e **somente leitura**. A RPC `entrar_loja_whatsapp` cria um vínculo `staff`; as policies de escrita aceitam apenas `owner/manager`. O app também esconde as ações de escrita nessa loja. As tabelas `n8n_*` e a RPC estão versionadas em `supabase/schema.sql` e em `supabase/migrations/20261103_hardening.sql`.
+A loja `LOJA_WHATSAPP_ID` é compartilhada e **somente leitura**. A RPC `entrar_loja_whatsapp` cria um vínculo `staff`; as policies de escrita aceitam apenas `owner/manager`. O app também esconde as ações de escrita nessa loja. As tabelas `n8n_*`, a RPC e a sincronização `sync_whatsapp_demo` estão versionadas em `supabase/schema.sql` e em `supabase/migrations/20261103_hardening.sql` / `20261103_whatsapp_demo.sql`.
+
+A sincronização roda no navegador a cada 15s (e no botão **Atualizar agora**): compras geram contas a pagar e entradas de estoque; vendas geram lançamentos e saídas. Ela é idempotente e restrita à loja demo. Se o n8n inserir uma mensagem nova, a tela e o restante do app convergem na próxima atualização.
 
 ### Preparação do WhatsApp
 

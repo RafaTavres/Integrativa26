@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { MessageCircle, Mic, Search, Tag } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  Boxes,
+  Clock3,
+  MessageCircle,
+  Mic,
+  RefreshCw,
+  Search,
+  Tag,
+  Wallet,
+} from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useActions } from "./action-provider";
 import { dayLabel, formatBRL, formatTime } from "@/lib/format";
@@ -49,35 +59,98 @@ function quantidade(valor: number): string {
 }
 
 export function WhatsappView() {
-  const { ready, naLojaWhatsapp, carregarWhatsapp } = useApp();
+  const {
+    ready,
+    naLojaWhatsapp,
+    sincronizarWhatsapp,
+    carregarWhatsapp,
+    cashCents,
+    openBills,
+    products,
+  } = useApp();
   const { openMore } = useActions();
   const [dados, setDados] = useState<DadosWhatsapp | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const busyRef = useRef(false);
 
-  useEffect(() => {
-    if (!ready || !naLojaWhatsapp) return;
-    let ativo = true;
-    carregarWhatsapp()
-      .then((resultado) => {
-        if (ativo) setDados(resultado);
-      })
-      .catch((motivo: unknown) => {
-        if (!ativo) return;
+  const refresh = useCallback(
+    async (manual: boolean) => {
+      if (!ready || !naLojaWhatsapp || busyRef.current) return;
+      busyRef.current = true;
+      if (manual) setSyncing(true);
+      setErro(null);
+
+      try {
+        const resultado = await sincronizarWhatsapp();
+        setDados(resultado);
+        setLastSync(new Date());
+      } catch (motivo) {
+        try {
+          const fallback = await carregarWhatsapp();
+          setDados(fallback);
+          setLastSync(new Date());
+        } catch {
+          // Mantém os dados anteriores se a leitura também falhar.
+        }
         setErro(
           motivo instanceof Error
             ? motivo.message
-            : "Não conseguimos ler o que veio do WhatsApp.",
+            : "Não conseguimos atualizar a demo do WhatsApp.",
         );
-      });
-    return () => {
-      ativo = false;
+      } finally {
+        busyRef.current = false;
+        setSyncing(false);
+      }
+    },
+    [ready, naLojaWhatsapp, sincronizarWhatsapp, carregarWhatsapp],
+  );
+
+  useEffect(() => {
+    if (!ready || !naLojaWhatsapp) return;
+    void refresh(false);
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refresh(false);
+    }, 15_000);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh(false);
     };
-  }, [ready, naLojaWhatsapp, carregarWhatsapp]);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [ready, naLojaWhatsapp, refresh]);
 
   const ofertas = useMemo(() => dados?.ofertas ?? [], [dados]);
   const movimentos = useMemo(() => dados?.movimentos ?? [], [dados]);
   const produtos = useMemo(() => agruparPorProduto(ofertas), [ofertas]);
+  const totalVendas = movimentos
+    .filter((item) => item.tipo === "venda")
+    .reduce((total, item) => total + item.totalCents, 0);
+  const totalCompras = movimentos
+    .filter((item) => item.tipo === "compra")
+    .reduce((total, item) => total + item.totalCents, 0);
+  const vendasCount = movimentos.filter((item) => item.tipo === "venda").length;
+  const comprasCount = movimentos.filter(
+    (item) => item.tipo === "compra",
+  ).length;
+  const fornecedores = new Set(ofertas.map((item) => item.fornecedor)).size;
+  const totalContas = openBills.reduce(
+    (total, bill) => total + bill.amountCents,
+    0,
+  );
+  const lastSyncLabel = lastSync
+    ? lastSync.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
 
   const produtosFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -88,14 +161,6 @@ export function WhatsappView() {
         item.melhor.fornecedor.toLowerCase().includes(termo),
     );
   }, [produtos, busca]);
-
-  const totalVendas = movimentos
-    .filter((item) => item.tipo === "venda")
-    .reduce((total, item) => total + item.totalCents, 0);
-  const totalCompras = movimentos
-    .filter((item) => item.tipo === "compra")
-    .reduce((total, item) => total + item.totalCents, 0);
-  const fornecedores = new Set(ofertas.map((item) => item.fornecedor)).size;
 
   if (!naLojaWhatsapp) {
     return (
@@ -126,14 +191,42 @@ export function WhatsappView() {
   return (
     <div className="mx-auto w-full max-w-[1120px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-9">
       <header className="animate-rise">
-        <p className="eyebrow">Pelo WhatsApp</p>
-        <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
-          WhatsApp
-        </h1>
-        <p className="mt-2 max-w-[34rem] text-sm leading-relaxed text-muted">
-          O que foi registrado no grupo da loja e as ofertas que os
-          fornecedores mandaram, com o melhor preço de cada item.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">Pelo WhatsApp</p>
+            <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
+              WhatsApp
+            </h1>
+            <p className="mt-2 max-w-[34rem] text-sm leading-relaxed text-muted">
+              O que foi registrado no grupo da loja e as ofertas que os
+              fornecedores mandaram, com o melhor preço de cada item.
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={() => void refresh(true)}
+              disabled={syncing}
+              className="btn btn-secondary h-10 px-3 text-xs"
+            >
+              <RefreshCw
+                className={cn("size-3.5", syncing && "animate-spin")}
+                strokeWidth={2.2}
+              />
+              {syncing ? "Atualizando…" : "Atualizar agora"}
+            </button>
+            <p
+              className="flex items-center gap-1 text-[0.625rem] text-muted"
+              aria-live="polite"
+            >
+              <Clock3 className="size-3" strokeWidth={2} />
+              {lastSyncLabel
+                ? `Atualizado às ${lastSyncLabel}`
+                : "Sincronizando…"}{" "}
+              · automático a cada 15s
+            </p>
+          </div>
+        </div>
       </header>
 
       <div className="animate-rise mt-6 grid gap-2.5 sm:grid-cols-3">
@@ -144,6 +237,9 @@ export function WhatsappView() {
           <p className="mt-1 text-2xl font-extrabold tracking-tight text-sage-dark tabular">
             {formatBRL(totalVendas)}
           </p>
+          <p className="mt-0.5 text-[0.6875rem] text-muted">
+            {vendasCount} {vendasCount === 1 ? "venda" : "vendas"}
+          </p>
         </div>
         <div className="rounded-[4px] border border-line bg-paper p-3.5">
           <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
@@ -151,6 +247,9 @@ export function WhatsappView() {
           </p>
           <p className="mt-1 text-2xl font-extrabold tracking-tight text-terracotta-dark tabular">
             {formatBRL(totalCompras)}
+          </p>
+          <p className="mt-0.5 text-[0.6875rem] text-muted">
+            {comprasCount} {comprasCount === 1 ? "compra" : "compras"}
           </p>
         </div>
         <div className="rounded-[4px] border border-line bg-paper p-3.5">
@@ -160,20 +259,67 @@ export function WhatsappView() {
           <p className="mt-1 text-2xl font-extrabold tracking-tight text-ink tabular">
             {ofertas.length}{" "}
             <span className="text-xs font-semibold text-muted">
-              de {fornecedores} {fornecedores === 1 ? "fornecedor" : "fornecedores"}
+              de {fornecedores}{" "}
+              {fornecedores === 1 ? "fornecedor" : "fornecedores"}
             </span>
           </p>
         </div>
       </div>
 
+      <div className="animate-rise mt-2 grid gap-2 sm:grid-cols-3">
+        <Link
+          href="/"
+          className="flex items-center justify-between gap-3 rounded-[4px] border border-line bg-cream px-3.5 py-2.5 transition-colors hover:bg-sand"
+        >
+          <span className="flex items-center gap-2 text-[0.6875rem] font-semibold text-muted">
+            <Wallet className="size-3.5" strokeWidth={2} />
+            Caixa da loja
+          </span>
+          <strong className="text-sm text-ink tabular">
+            {formatBRL(cashCents)}
+          </strong>
+        </Link>
+        <Link
+          href="/contas"
+          className="flex items-center justify-between gap-3 rounded-[4px] border border-line bg-cream px-3.5 py-2.5 transition-colors hover:bg-sand"
+        >
+          <span className="flex items-center gap-2 text-[0.6875rem] font-semibold text-muted">
+            <MessageCircle className="size-3.5" strokeWidth={2} />
+            Contas em aberto
+          </span>
+          <strong className="text-sm text-ink tabular">
+            {formatBRL(totalContas)}
+          </strong>
+        </Link>
+        <Link
+          href="/estoque"
+          className="flex items-center justify-between gap-3 rounded-[4px] border border-line bg-cream px-3.5 py-2.5 transition-colors hover:bg-sand"
+        >
+          <span className="flex items-center gap-2 text-[0.6875rem] font-semibold text-muted">
+            <Boxes className="size-3.5" strokeWidth={2} />
+            Itens no estoque
+          </span>
+          <strong className="text-sm text-ink tabular">{products.length}</strong>
+        </Link>
+      </div>
+
       {erro ? (
-        <div className="mt-5 rounded-[4px] border border-terracotta/30 bg-terracotta-soft p-4 text-xs text-ink">
-          {erro}
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-[4px] border border-terracotta/30 bg-terracotta-soft p-4 text-xs text-ink">
+          <span>{erro}</span>
+          <button
+            type="button"
+            onClick={() => void refresh(true)}
+            className="font-bold text-terracotta-dark underline underline-offset-2"
+          >
+            Tentar de novo
+          </button>
         </div>
       ) : null}
 
       {!dados && !erro ? (
-        <p className="mt-6 text-sm text-muted">Carregando o que veio do WhatsApp…</p>
+        <p className="mt-6 text-sm text-muted">
+          Sincronizando as mensagens do WhatsApp…
+        </p>
       ) : null}
 
       {dados ? (
@@ -321,6 +467,12 @@ export function WhatsappView() {
             <h2 className="display mt-1 text-xl text-ink">
               Vendas e compras pelo WhatsApp
             </h2>
+            <p className="mt-1 text-[0.6875rem] text-muted">
+              {movimentos.length}{" "}
+              {movimentos.length === 1 ? "mensagem" : "mensagens"} ·{" "}
+              {vendasCount} {vendasCount === 1 ? "venda" : "vendas"} ·{" "}
+              {comprasCount} {comprasCount === 1 ? "compra" : "compras"}
+            </p>
 
             {movimentos.length > 0 ? (
               <div className="mt-4 divide-y divide-line rounded-[4px] border border-line bg-paper">
@@ -371,8 +523,9 @@ export function WhatsappView() {
               </div>
             ) : (
               <div className="animate-rise mt-4 rounded-[4px] border border-dashed border-sand-dark bg-paper px-5 py-8 text-center text-xs text-muted">
-                Nada registrado pelo WhatsApp ainda. Use o botão COMPRA ou
-                VENDA no grupo da loja.
+                Nada registrado pelo WhatsApp ainda. Quando uma mensagem chegar,
+                use <strong>Atualizar agora</strong> ou aguarde a atualização
+                automática.
               </div>
             )}
           </section>
