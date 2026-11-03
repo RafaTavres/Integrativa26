@@ -237,6 +237,13 @@ function clampQuantity(quantity: number): number {
   return Math.min(9999, Math.max(0.001, quantity));
 }
 
+function parseLeadingQuantity(line: string) {
+  return new RegExp(
+    `^(${QUANTITY_SOURCE})(?![\\d.,])\\s*${UNIT_SOURCE}\\s*(x|×|@)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})(?:\\s*(?:=|→)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE}))?$`,
+    "i",
+  ).exec(line);
+}
+
 function moneyTokens(line: string): number[] {
   const values: number[] = [];
   for (const match of line.matchAll(MONEY_TOKEN)) {
@@ -452,8 +459,24 @@ function parseItems(lines: string[]): ParsedItem[] {
   // produto fica em uma linha e "2 x 40,00 = 80,00" na seguinte.
   let pendingName: string | null = null;
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+
     if (NON_ITEM.test(line) || HEADER_SKIP.test(line)) {
+      // Em notas de homologação e cupons longos, o nome do item pode conter
+      // "nota fiscal" ou "documento". Se a próxima linha traz quantidade,
+      // unidade e valor, esta linha é o nome do item, não um cabeçalho.
+      const nextLine = lines[lineIndex + 1];
+      const possibleName = cleanItemName(line);
+      if (
+        nextLine &&
+        !moneyTokens(line).length &&
+        isPlausibleItemName(possibleName) &&
+        parseLeadingQuantity(nextLine)
+      ) {
+        pendingName = line;
+        continue;
+      }
       pendingName = null;
       continue;
     }
@@ -510,10 +533,7 @@ function parseItems(lines: string[]): ParsedItem[] {
 
     // Linha só com quantidade e preço, sem nome. Usa o nome da linha anterior.
     if (pendingName) {
-      const leadingQuantity = new RegExp(
-        `^(${QUANTITY_SOURCE})(?![\\d.,])\\s*${UNIT_SOURCE}\\s*(x|×|@)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE})(?:\\s*(?:=|→)?\\s*(?:R\\$\\s*)?(${MONEY_SOURCE}))?$`,
-        "i",
-      ).exec(line);
+      const leadingQuantity = parseLeadingQuantity(line);
 
       if (leadingQuantity) {
         const quantity = parseQuantityToken(leadingQuantity[1]);
