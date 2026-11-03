@@ -36,7 +36,7 @@ O worker de e-mail é opcional. Sem `EMAIL_IMAP_*` e `SUPABASE_SERVICE_ROLE_KEY`
 ## 1. Preparar o Supabase (uma vez)
 
 1. Crie um projeto em [supabase.com](https://supabase.com) (região `South America (São Paulo)` reduz a latência).
-2. Abra **SQL Editor** e rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Ele cria tabelas, enums, RLS, a view `daily_totals`, as RPCs e o hardening de demo/seed. O script é idempotente: pode ser rodado de novo para aplicar as tabelas de **fornecedores, compras e contas a pagar** em um projeto que já existia. Projetos já criados podem aplicar só [`supabase/migrations/20261103_hardening.sql`](supabase/migrations/20261103_hardening.sql) e [`20261103_stock_entry.sql`](supabase/migrations/20261103_stock_entry.sql).
+2. Abra **SQL Editor** e rode o conteúdo de [`supabase/schema.sql`](supabase/schema.sql). Ele cria tabelas, enums, RLS, a view `daily_totals`, as RPCs e o hardening de demo/seed. O script é idempotente: pode ser rodado de novo para aplicar as tabelas de **fornecedores, compras e contas a pagar** em um projeto que já existia. Projetos já criados podem aplicar só [`supabase/migrations/20261103_hardening.sql`](supabase/migrations/20261103_hardening.sql), [`20261103_stock_entry.sql`](supabase/migrations/20261103_stock_entry.sql) e [`20261103_whatsapp_demo.sql`](supabase/migrations/20261103_whatsapp_demo.sql).
 3. Ative o login anônimo em **Authentication → Sign In / Providers → Anonymous sign-ins**.
 4. Em **Authentication → URL Configuration**, defina:
    - **Site URL**: o endereço final do app (ex.: `https://estokar.seudominio.com`).

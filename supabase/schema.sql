@@ -1975,6 +1975,7 @@ begin
     where nullif(btrim(s.supplier_name), '') is not null
     group by lower(btrim(s.supplier_name))
   loop
+    v_supplier := null;
     select id into v_supplier
       from public.suppliers
      where business_id = p_business_id
@@ -2054,6 +2055,7 @@ begin
      order by pp.created_at desc
      limit 1;
 
+    v_product := null;
     select id into v_product
       from public.products
      where business_id = p_business_id
@@ -2100,11 +2102,13 @@ begin
     v_unit_cost := coalesce(r.unit_cost_cents, round(r.total_cents / r.quantity)::integer);
     v_total := coalesce(r.total_cents, round(v_unit_cost * r.quantity)::integer);
 
+    v_product := null;
     select id into v_product
       from public.products
      where business_id = p_business_id
        and lower(btrim(name)) = lower(v_name);
 
+    v_supplier := null;
     select id into v_supplier
       from public.suppliers
      where business_id = p_business_id
@@ -2155,6 +2159,7 @@ begin
     v_name := btrim(r.product_name);
     v_qty := r.quantity;
 
+    v_product := null;
     select id into v_product
       from public.products
      where business_id = p_business_id
