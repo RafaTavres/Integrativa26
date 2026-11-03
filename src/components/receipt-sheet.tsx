@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   Check,
+  FileUp,
   ImagePlus,
   Loader2,
   PenLine,
@@ -35,6 +36,7 @@ import {
   type PaymentMethod,
 } from "@/lib/types";
 import { parseNfceQrCode, type NfceData } from "@/lib/nfce";
+import { parseNfeXml } from "@/lib/nfe-xml";
 import { cn } from "@/lib/cn";
 
 interface ReceiptSheetProps {
@@ -339,6 +341,61 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
       if (nfceAbortRef.current === controller) {
         nfceAbortRef.current = null;
       }
+    }
+  }
+
+  async function handleNfceXml(file: File) {
+    if (nfceStatus === "loading") return;
+    setNfceStatus("loading");
+    setNfceMessage("Lendo o XML da nota…");
+    try {
+      const xml = await file.text();
+      const data = parseNfeXml(xml);
+      if (!data) {
+        throw new Error(
+          "Não achamos itens no XML. Confira se é o XML da NF-e/NFC-e.",
+        );
+      }
+
+      const qrKey = draft?.qrCode
+        ? parseNfceQrCode(draft.qrCode)?.key
+        : undefined;
+      if (qrKey && data.key && qrKey !== data.key) {
+        throw new Error(
+          "Este XML é de outra nota. Baixe o XML da mesma chave que aparece no QR Code.",
+        );
+      }
+
+      const xmlData: NfceData = {
+        url: nfceUrl ?? "",
+        key: data.key,
+        supplierName: data.supplierName,
+        cnpj: data.cnpj,
+        date: data.date,
+        totalCents: data.totalCents,
+        paymentMethod: data.paymentMethod,
+        items: data.items,
+      };
+      const official = nfceToDraft(
+        xmlData,
+        draft?.qrCode ?? "",
+        draft ?? emptyDraft(),
+      );
+      setDraft(official);
+      hydrateReview(official);
+      setNfceStatus("ok");
+      setNfceMessage(
+        `Itens do XML da NFC-e carregados${
+          data.key ? ` · chave ${data.key}` : ""
+        }. Confira e ajuste se precisar.`,
+      );
+    } catch (error) {
+      setNfceStatus("error");
+      setNfceMessage(
+        error instanceof Error
+          ? error.message
+          : "Não conseguimos ler o XML desta nota.",
+      );
     }
   }
 
@@ -938,14 +995,30 @@ export function ReceiptSheet({ onClose }: ReceiptSheetProps) {
               </p>
               <p className="mt-1 break-words">{nfceMessage}</p>
               {nfceStatus === "error" && nfceUrl ? (
-                <a
-                  href={nfceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1.5 inline-flex font-bold underline underline-offset-2"
-                >
-                  Abrir nota na SEFAZ
-                </a>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <a
+                    href={nfceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-bold underline underline-offset-2"
+                  >
+                    Abrir nota na SEFAZ
+                  </a>
+                  <label className="inline-flex cursor-pointer items-center gap-1 font-bold underline underline-offset-2">
+                    <FileUp className="size-3" strokeWidth={2.2} />
+                    Já baixei o XML
+                    <input
+                      type="file"
+                      accept=".xml,text/xml,application/xml"
+                      className="sr-only"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.currentTarget.value = "";
+                        if (file) void handleNfceXml(file);
+                      }}
+                    />
+                  </label>
+                </div>
               ) : null}
             </div>
           ) : null}

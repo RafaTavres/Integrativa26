@@ -11,6 +11,7 @@ export interface NfeXmlItem {
 }
 
 export interface NfeXmlData {
+  key?: string;
   supplierName?: string;
   cnpj?: string;
   date?: string;
@@ -125,8 +126,10 @@ export function parseNfeXml(xml: string): NfeXmlData | null {
     (ide ? findTag(ide, "dhEmissao") ?? findTag(ide, "dEmi") : undefined) ??
     undefined;
   const rawDueDate = cobr ? findTag(cobr, "dVenc") : undefined;
+  const keyMatch = xml.match(/Id="(?:NFe)?(\d{44})"/i);
 
   return {
+    key: keyMatch?.[1],
     supplierName: emit ? findTag(emit, "xNome") : undefined,
     cnpj: emit ? findTag(emit, "CNPJ") : undefined,
     date: rawDate ? rawDate.slice(0, 10) : undefined,

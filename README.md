@@ -88,7 +88,8 @@ Quando a foto tem o QR Code da NFC-e, o app lê o código com **jsQR** antes de 
 
 - Só URLs de portais `.gov.br` são aceitas. Isso evita usar o endpoint como proxy para outros endereços.
 - Se a SEFAZ não devolver os itens (captcha, layout diferente ou nota não encontrada), o app mantém a leitura da foto, avisa e oferece **Abrir nota na SEFAZ**.
-- A consulta depende do portal de cada estado. Alguns exigem captcha ou bloqueiam acesso automático; nesses casos o fluxo manual continua funcionando.
+- Quando o portal pede captcha, dá para baixar o XML da nota e enviar no próprio aviso (**Já baixei o XML**). O app confere a chave de acesso do XML com a chave do QR e carrega os itens oficiais na conferência.
+- A consulta depende do portal de cada estado. Alguns exigem captcha ou bloqueiam acesso automático; nesses casos o fluxo QR + XML manual continua funcionando.
 
 ### WhatsApp via n8n
 
