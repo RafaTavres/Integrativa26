@@ -3,6 +3,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SEGMENTS, isSegmentId } from "../segments";
 import type { ImportRow, ImportSummary } from "../import";
+import {
+  pendingEmailImportFromEvent,
+  type PendingEmailImport,
+} from "../ingestion";
 import type {
   Bill,
   Business,
@@ -934,6 +938,54 @@ export async function carregarDadosWhatsapp(
     }));
 
   return { movimentos, ofertas: listaOfertas };
+}
+
+// ---------------------------------------------------------------------------
+// E-mail de fornecedor
+// ---------------------------------------------------------------------------
+
+export async function loadPendingEmailImports(
+  client: SupabaseClient,
+  businessId: string,
+): Promise<PendingEmailImport[]> {
+  const { data, error } = await client
+    .from("ingestion_events")
+    .select("id, created_at, raw_input, extracted_payload")
+    .eq("business_id", businessId)
+    .eq("source_type", "email_import")
+    .eq("status", "pending_review")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) {
+    throw toCloudError(error, "Não conseguimos ler os e-mails pendentes.");
+  }
+
+  return ((data ?? []) as Array<{
+    id: string;
+    created_at: string;
+    raw_input: string | null;
+    extracted_payload: unknown;
+  }>)
+    .map((row) => pendingEmailImportFromEvent(row))
+    .filter((event): event is PendingEmailImport => Boolean(event));
+}
+
+export async function markEmailImportProcessed(
+  client: SupabaseClient,
+  businessId: string,
+  eventId: string,
+): Promise<void> {
+  const { error } = await client
+    .from("ingestion_events")
+    .update({
+      status: "processed",
+      processed_at: new Date().toISOString(),
+    })
+    .eq("business_id", businessId)
+    .eq("id", eventId);
+  if (error) {
+    throw toCloudError(error, "Não conseguimos marcar o e-mail como lido.");
+  }
 }
 
 // ---------------------------------------------------------------------------

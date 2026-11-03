@@ -98,9 +98,11 @@ Para abrir a loja, a função `entrar_loja_whatsapp` no Supabase garante o vínc
 
 ### E-mail de fornecedor (XML)
 
-O caminho manual já funciona: em **Importar**, envie o XML da NF-e/NFC-e. O parser lê emitente, data, itens, quantidade, valor unitário, total e forma de pagamento, e cria as compras na prévia.
+O caminho manual já funciona: em **Importar**, envie o XML da NF-e/NFC-e. O parser lê emitente, data, itens, quantidade, valor unitário, total e forma de pagamento, e cria as compras na prévia. Ao importar, os produtos existentes têm o estoque e o custo médio atualizados; produtos novos são criados.
 
-Para o modo automático, o provedor de e-mail (Postmark, Resend, Cloudflare Email Worker ou um fluxo n8n/IMAP) deve chamar `POST /api/inbound/email` com o segredo `EMAIL_INGESTION_SECRET` e o anexo em base64:
+Para o modo automático, há dois caminhos:
+
+**Webhook do provedor** — Postmark, Resend, Cloudflare Email Worker ou n8n chamam `POST /api/inbound/email` com o segredo `EMAIL_INGESTION_SECRET` e o anexo em base64:
 
 ```json
 {
@@ -115,7 +117,30 @@ Para o modo automático, o provedor de e-mail (Postmark, Resend, Cloudflare Emai
 }
 ```
 
-O endpoint valida o segredo, faz o parsing e devolve `data` e `rows`. A gravação no banco fica no conector, que pode reutilizar o mesmo importador do webapp. Sem `EMAIL_INGESTION_SECRET`, o endpoint responde `503` e nada é processado.
+**IMAP** — para Docker/VPS, o app consulta uma caixa existente e deixa os XMLs pendentes em `/integracoes` para importar com um clique. Variáveis:
+
+```bash
+EMAIL_IMAP_HOST=imap.exemplo.com
+EMAIL_IMAP_PORT=993
+EMAIL_IMAP_SECURE=true
+EMAIL_IMAP_USER=notas@exemplo.com
+EMAIL_IMAP_PASSWORD=senha-de-app
+EMAIL_IMAP_MAILBOX=INBOX
+EMAIL_IMAP_BUSINESS_ID=id-do-negocio
+SUPABASE_SERVICE_ROLE_KEY=chave-secreta-do-supabase
+EMAIL_INGESTION_SECRET=segredo-do-webhook
+```
+
+O worker é acionado por um cron/n8n:
+
+```bash
+curl -X POST https://seu-dominio/api/inbound/imap \
+  -H "Authorization: Bearer $EMAIL_INGESTION_SECRET"
+```
+
+O endpoint lê os e-mails não vistos, extrai o XML, grava um `ingestion_event` com status `pending_review` e marca o e-mail como lido. A tela **Integrações** lista os pendentes e importa tudo para o estoque e o histórico de compras. O modo IMAP precisa de um servidor de longa duração; em Vercel/serverless, prefira o webhook do provedor.
+
+Sem `EMAIL_INGESTION_SECRET`, os endpoints respondem `503` e nada é processado.
 
 ### Docker
 
@@ -458,7 +483,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - **Áudio**: guardar a gravação no bucket privado `ingestion`, transcrever com Whisper no servidor e extrair produto/quantidade/valor/pagamento com um modelo mais robusto que o Web Speech atual.
 - **Foto**: Vision para ler cupom, comanda ou comprovante; `extracted_payload` guarda o JSON bruto.
 - **WhatsApp**: webhook recebe a mensagem, cria um `ingestion_event` com `whatsapp_import` e segue o mesmo pipeline. A demo atual já lê os grupos via n8n.
-- **E-mail/XML**: o parser de XML e a importação manual já funcionam; falta o worker que monitora a caixa de entrada e grava a NF-e em `ingestion_events` com `email_import`.
+- **E-mail/XML**: o parser, a importação manual, o webhook do provedor e o worker IMAP estão implementados; a tela de integrações lista os XMLs pendentes e importa com um clique. Falta configurar a caixa/credenciais no servidor.
 - **QR Code/SEFAZ**: implementado para QR de NFC-e, com consulta server-side ao portal `.gov.br` e fallback para OCR.
 - **Fila**: Edge Function ou worker processa, atualiza `ingestion_events` e cria o lançamento apenas quando a confiança passa do limite.
 - **Revisão**: tudo abaixo do limite nasce `pending_review`; a interface de conferência já existe no MVP.
@@ -492,7 +517,7 @@ A tela **Importar** aceita `.csv`, `.tsv` e `.xlsx`. O cabeçalho é flexível (
 - O modo privado pode bloquear o `localStorage` e a sessão.
 - A foto não é armazenada: o OCR de texto roda no próprio navegador e a imagem não sai do aparelho. O reconhecimento é de texto, não de imagem (não identifica objetos).
 - A consulta por QR Code depende do portal da SEFAZ do estado. Alguns portais usam captcha ou bloqueiam acesso automático; nesses casos o app mantém a leitura da foto e oferece o link oficial.
-- O WhatsApp ainda não está conectado para a sua loja: a tela de integrações só salva o número e as preferências neste navegador. A loja de demonstração em `/whatsapp` é alimentada pelo n8n e pelas tabelas `n8n_*` do Supabase. A importação manual de XML já funciona; falta o worker que monitora a caixa de entrada automaticamente.
+- O WhatsApp ainda não está conectado para a sua loja: a tela de integrações só salva o número e as preferências neste navegador. A loja de demonstração em `/whatsapp` é alimentada pelo n8n e pelas tabelas `n8n_*` do Supabase. O worker IMAP e a fila de e-mails pendentes existem; falta configurar a caixa e as credenciais do servidor.
 
 ### Próximos passos para produção
 

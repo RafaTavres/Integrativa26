@@ -17,6 +17,7 @@ import type { SegmentProfile } from "./segments";
 import { getSupabaseClient, loadSupabaseConfig } from "./supabase/client";
 import { addDaysToDateOnly, todayDateOnly } from "./analytics";
 import type { ImportRow, ImportSummary } from "./import";
+import type { PendingEmailImport } from "./ingestion";
 import {
   abrirLojaWhatsapp,
   carregarDadosWhatsapp,
@@ -26,8 +27,10 @@ import {
   createPendingSale,
   ensureAnonymousSession,
   importSpreadsheetRows,
+  loadPendingEmailImports,
   loadWorkspace,
   LOJA_WHATSAPP_ID,
+  markEmailImportProcessed,
   openWorkspace,
   payBill as payCloudBill,
   registerExpense,
@@ -209,6 +212,8 @@ interface AppContextValue {
   payBill: (billId: string, paymentMethod: PaymentMethod) => Promise<void>;
   deleteBill: (billId: string) => Promise<void>;
   importRows: (rows: ImportRow[]) => Promise<ImportSummary>;
+  loadPendingEmails: () => Promise<PendingEmailImport[]>;
+  markEmailProcessed: (eventId: string) => Promise<void>;
   setSegment: (segmentId: SegmentId) => Promise<void>;
   resetDemo: () => Promise<void>;
   createAudioDraft: (input: AudioDraftInput) => Promise<Transaction>;
@@ -1466,6 +1471,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [refresh, state.bills, state.products, state.purchases, state.suppliers, state.transactions],
   );
 
+  const loadPendingEmails = useCallback(async (): Promise<
+    PendingEmailImport[]
+  > => {
+    const active = cloudRef.current;
+    if (!active) return [];
+    return loadPendingEmailImports(active.client, active.businessId);
+  }, []);
+
+  const markEmailProcessed = useCallback(
+    async (eventId: string): Promise<void> => {
+      const active = cloudRef.current;
+      if (!active) return;
+      await markEmailImportProcessed(active.client, active.businessId, eventId);
+    },
+    [],
+  );
+
   const reviewPending = useCallback(
     async (input: ReviewInput): Promise<void> => {
       const pending = state.transactions.find(
@@ -2007,6 +2029,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       payBill,
       deleteBill,
       importRows,
+      loadPendingEmails,
+      markEmailProcessed,
       setSegment,
       resetDemo,
       createAudioDraft,
@@ -2050,6 +2074,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       payBill,
       deleteBill,
       importRows,
+      loadPendingEmails,
+      markEmailProcessed,
       setSegment,
       resetDemo,
       createAudioDraft,

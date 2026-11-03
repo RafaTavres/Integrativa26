@@ -3,6 +3,8 @@ import type {
   SourceType,
   TransactionKind,
 } from "./types";
+import { parseNfeXml, nfeXmlToImportRows } from "./nfe-xml";
+import type { ImportRow } from "./import";
 
 /**
  * Contrato único para tudo que vai entrar por fora da interface:
@@ -169,6 +171,55 @@ export function draftFromPayload(
     externalId: envelope.externalId,
     confidence,
     needsReview: confidence === undefined || confidence < 0.9,
+  };
+}
+
+export interface PendingEmailImport {
+  id: string;
+  createdAt: string;
+  from?: string;
+  subject?: string;
+  supplierName?: string;
+  totalCents?: number;
+  itemCount: number;
+  rows: ImportRow[];
+}
+
+interface IngestionEventRow {
+  id: string;
+  created_at: string;
+  raw_input?: string | null;
+  extracted_payload?: unknown;
+}
+
+/**
+ * O worker de e-mail guarda o XML bruto em `extracted_payload.xml`. A tela
+ * refaz o parsing no cliente, em vez de confiar em linhas serializadas no
+ * banco. Assim a prévia usa exatamente o mesmo parser da importação manual.
+ */
+export function pendingEmailImportFromEvent(
+  row: IngestionEventRow,
+): PendingEmailImport | null {
+  const payload =
+    row.extracted_payload && typeof row.extracted_payload === "object"
+      ? (row.extracted_payload as Record<string, unknown>)
+      : null;
+  if (!payload) return null;
+  const xml = payload.xml;
+  if (typeof xml !== "string" || !xml.trim()) return null;
+
+  const data = parseNfeXml(xml);
+  if (!data) return null;
+
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    from: typeof payload.from === "string" ? payload.from : undefined,
+    subject: typeof payload.subject === "string" ? payload.subject : undefined,
+    supplierName: data.supplierName,
+    totalCents: data.totalCents,
+    itemCount: data.items.length,
+    rows: nfeXmlToImportRows(data),
   };
 }
 

@@ -15,7 +15,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { WhatsAppConnectSheet } from "./whatsapp-connect-sheet";
+import { useApp } from "@/lib/store";
+import { useToast } from "./toast";
 import { cn } from "@/lib/cn";
+import { formatBRL } from "@/lib/format";
+import type { PendingEmailImport } from "@/lib/ingestion";
 import {
   WHATSAPP_DEFAULT_PREFERENCES,
   WHATSAPP_EXAMPLES,
@@ -116,10 +120,66 @@ export function IntegrationsView() {
     WHATSAPP_DEFAULT_PREFERENCES,
   );
   const [connectOpen, setConnectOpen] = useState(false);
+  const [pendingEmails, setPendingEmails] = useState<PendingEmailImport[]>([]);
+  const [emailInbox, setEmailInbox] = useState<{
+    configured: boolean;
+    user?: string;
+    mailbox?: string;
+    storage?: boolean;
+  } | null>(null);
+  const [emailBusy, setEmailBusy] = useState<string | null>(null);
+  const { loadPendingEmails, markEmailProcessed, importRows } = useApp();
+  const { toast } = useToast();
 
   useEffect(() => {
     setPreferences(loadWhatsAppPreferences());
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void loadPendingEmails()
+      .then((events) => {
+        if (active) setPendingEmails(events);
+      })
+      .catch(() => undefined);
+    void fetch("/api/inbound/imap", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (active) setEmailInbox(data);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [loadPendingEmails]);
+
+  async function importEmail(event: PendingEmailImport) {
+    if (emailBusy) return;
+    setEmailBusy(event.id);
+    try {
+      const summary = await importRows(event.rows);
+      await markEmailProcessed(event.id);
+      setPendingEmails((current) =>
+        current.filter((item) => item.id !== event.id),
+      );
+      toast(
+        summary.imported > 0
+          ? `${summary.imported} ${
+              summary.imported === 1 ? "item importado" : "itens importados"
+            } do e-mail.`
+          : "O e-mail não tinha itens válidos.",
+      );
+    } catch (error) {
+      toast(
+        error instanceof Error
+          ? error.message
+          : "Não conseguimos importar este e-mail.",
+        "info",
+      );
+    } finally {
+      setEmailBusy(null);
+    }
+  }
 
   const prepared = isValidPhone(preferences.phone);
 
@@ -266,6 +326,86 @@ export function IntegrationsView() {
                 >
                   Ver a loja conectada
                   <ArrowRight className="size-3" strokeWidth={2.4} />
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          <section className="animate-rise rounded-[4px] border border-line bg-paper p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid size-9 flex-none place-items-center rounded-[4px] bg-sage-soft text-sage-dark">
+                  <Mail className="size-4" strokeWidth={2} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-[0.8125rem] font-bold text-ink">
+                    E-mails de fornecedor
+                  </h2>
+                  <p className="mt-0.5 text-[0.6875rem] text-muted">
+                    XML de NF-e/NFC-e que chega na caixa.
+                  </p>
+                </div>
+              </div>
+              <StatusBadge tone={emailInbox?.configured ? "sage" : "mustard"}>
+                {emailInbox?.configured ? "Caixa configurada" : "Não configurada"}
+              </StatusBadge>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {pendingEmails.length === 0 ? (
+                <div className="rounded-[4px] border border-dashed border-sand-dark bg-cream p-3 text-[0.6875rem] leading-relaxed text-muted">
+                  Nenhum XML pendente.{" "}
+                  {emailInbox?.configured
+                    ? "Quando um fornecedor enviar a nota, ela aparece aqui para importar."
+                    : "Configure a caixa IMAP no servidor ou envie o XML manualmente."}
+                </div>
+              ) : (
+                pendingEmails.map((event) => (
+                  <div
+                    key={event.id}
+                    className="flex items-center gap-3 rounded-[4px] border border-line bg-cream p-3"
+                  >
+                    <span className="grid size-8 flex-none place-items-center rounded-[3px] bg-paper text-ink">
+                      <Mail className="size-3.5" strokeWidth={2} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[0.75rem] font-bold text-ink">
+                        {event.supplierName ?? "Fornecedor"}
+                      </p>
+                      <p className="mt-0.5 truncate text-[0.625rem] text-muted">
+                        {event.itemCount}{" "}
+                        {event.itemCount === 1 ? "item" : "itens"}
+                        {event.totalCents
+                          ? ` · ${formatBRL(event.totalCents)}`
+                          : ""}
+                        {event.from ? ` · ${event.from}` : ""}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void importEmail(event)}
+                      disabled={emailBusy !== null}
+                      className="btn btn-primary h-9 flex-none px-3 text-[0.6875rem]"
+                    >
+                      {emailBusy === event.id ? "Importando…" : "Importar"}
+                    </button>
+                  </div>
+                ))
+              )}
+
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.625rem] text-muted">
+                <span>
+                  {emailInbox?.configured
+                    ? `Caixa ${emailInbox.mailbox ?? "INBOX"}${
+                        emailInbox.user ? ` · ${emailInbox.user}` : ""
+                      }`
+                    : "Caixa IMAP não configurada no servidor."}
+                </span>
+                <Link
+                  href="/importar"
+                  className="font-bold text-terracotta-dark underline underline-offset-2"
+                >
+                  Importar XML manualmente
                 </Link>
               </div>
             </div>

@@ -5,6 +5,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Bibliotecas de IMAP usam sockets/TLS do Node; não devem ser empacotadas
+  // no bundle do navegador.
+  serverExternalPackages: ["imapflow", "mailparser"],
   ...(process.env.NEXT_OUTPUT === "standalone"
     ? { output: "standalone" as const }
     : {}),
