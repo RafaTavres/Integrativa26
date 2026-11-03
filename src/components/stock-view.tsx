@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Package, PackagePlus, Pencil, Plus } from "lucide-react";
+import { Package, PackagePlus, Plus } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useActions } from "./action-provider";
 import { formatBRL } from "@/lib/format";
@@ -31,7 +31,7 @@ export function StockView() {
     <div className="mx-auto w-full max-w-[1120px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-9">
       <header className="animate-rise flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="display text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
+          <h1 className="display text-[1.75rem] leading-[1.05] text-ink sm:text-[2rem]">
             {segment.stockTitle}
           </h1>
           <p className="mt-1.5 text-[0.8125rem] text-muted sm:text-sm">
@@ -74,26 +74,22 @@ export function StockView() {
             </button>
           </div>
         ) : (
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          <div className="divide-y divide-line rounded-[4px] border border-line bg-paper">
             {sorted.map((product) => {
               const isEmpty = product.stock === 0;
               const isLow = product.stock <= product.minStock;
 
               return (
-                <article
-                  key={product.id}
-                  className={cn(
-                    "flex items-center gap-3 rounded-[4px] border bg-paper p-3 transition-colors hover:border-sand-dark",
-                    isLow
-                      ? "border-mustard/45 border-l-[3px] border-l-mustard"
-                      : "border-line",
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="truncate text-[0.875rem] font-bold leading-tight text-ink">
+                <div key={product.id} className="flex items-center gap-3 px-3 py-3">
+                  <button
+                    type="button"
+                    onClick={() => openEditProduct(product.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate text-[0.8125rem] font-bold leading-tight text-ink">
                         {product.name}
-                      </h3>
+                      </span>
                       {isLow ? (
                         <span
                           className={cn(
@@ -106,16 +102,16 @@ export function StockView() {
                           {isEmpty ? "Acabou" : "Acabando"}
                         </span>
                       ) : null}
-                    </div>
-                    <p className="mt-1 text-[0.6875rem] text-muted">
+                    </span>
+                    <span className="mt-0.5 block text-[0.6875rem] text-muted">
                       {formatBRL(product.priceCents)}
-                    </p>
-                  </div>
+                    </span>
+                  </button>
 
                   <div className="text-right">
                     <p
                       className={cn(
-                        "text-xl font-extrabold leading-none tracking-tight tabular",
+                        "text-lg font-extrabold leading-none tracking-tight tabular",
                         isLow ? "text-mustard-dark" : "text-ink",
                       )}
                     >
@@ -130,23 +126,14 @@ export function StockView() {
                     type="button"
                     onClick={() => openStock(product.id)}
                     className={cn(
-                      "btn h-9 flex-none px-2.5 text-[0.6875rem]",
+                      "btn h-8 flex-none px-2.5 text-[0.6875rem]",
                       isLow ? "btn-primary" : "btn-secondary",
                     )}
                   >
                     <Plus className="size-3.5" strokeWidth={2.5} />
                     Repor
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => openEditProduct(product.id)}
-                    className="icon-button size-8 flex-none border-transparent bg-transparent text-muted hover:border-line"
-                    aria-label={`Ajustar ${product.name}`}
-                  >
-                    <Pencil className="size-3.5" strokeWidth={1.9} />
-                  </button>
-                </article>
+                </div>
               );
             })}
           </div>

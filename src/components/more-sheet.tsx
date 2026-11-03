@@ -4,20 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CakeSlice,
-  Check,
   Cloud,
   CloudOff,
-  FileSpreadsheet,
   MessageCircle,
-  Mic,
-  ReceiptText,
   RefreshCw,
-  RotateCcw,
   Scissors,
   Shirt,
   Store,
-  TrendingUp,
-  Truck,
 } from "lucide-react";
 import { Sheet } from "./sheet";
 import { useApp } from "@/lib/store";
@@ -43,7 +36,6 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
     segments,
     mode,
     cloudStatus,
-    cloudMessage,
     ready,
     retryCloud,
     setSegment,
@@ -144,27 +136,12 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
           ? "Só neste navegador"
           : "Salvo neste navegador";
 
-  const connectionMessage =
-    mode === "cloud"
-      ? "Uma sessão anônima do Supabase guarda suas vendas, gastos, estoque, compras e contas no banco."
-      : cloudStatus === "connecting"
-        ? "Falando com o Supabase para abrir seu caixa."
-        : cloudStatus === "error"
-          ? (cloudMessage ??
-            "Não conseguimos conectar ao Supabase. Os dados ficam neste navegador.")
-          : (cloudMessage ??
-            "O Supabase não está configurado. Os dados ficam neste navegador.");
-
   const canRetry =
     ready && cloudStatus !== "ready" && cloudStatus !== "connecting";
 
   return (
-    <Sheet
-      title="Sua loja"
-      description="Troque o ramo para ver o mesmo caixa com outra cara."
-      onClose={onClose}
-    >
-      <div className="space-y-5">
+    <Sheet title="Sua loja" onClose={onClose}>
+      <div className="space-y-4">
         <div className="flex items-center gap-3 rounded-[4px] border border-line bg-cream p-3">
           <span className="display grid size-11 flex-none place-items-center rounded-[4px] bg-ink text-lg text-cream">
             {initials(business.name)}
@@ -179,48 +156,43 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
           </div>
         </div>
 
-        <section>
-          <p className="eyebrow mb-2">Loja conectada</p>
-          <button
-            type="button"
-            onClick={() => void trocarLoja()}
-            disabled={busy !== null || mode !== "cloud"}
-            aria-busy={busy === "loja" || undefined}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-[4px] border p-3 text-left transition-colors disabled:opacity-60",
-              naLojaWhatsapp
-                ? "border-line bg-paper hover:border-sand-dark hover:bg-cream"
-                : "border-sage/35 bg-sage-soft hover:border-sage",
+        <button
+          type="button"
+          onClick={() => void trocarLoja()}
+          disabled={busy !== null || mode !== "cloud"}
+          aria-busy={busy === "loja" || undefined}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-[4px] border px-3 py-3 text-left transition-colors disabled:opacity-60",
+            naLojaWhatsapp
+              ? "border-line bg-paper hover:border-sand-dark hover:bg-cream"
+              : "border-sage/35 bg-sage-soft hover:border-sage",
+          )}
+        >
+          <span className="grid size-8 flex-none place-items-center rounded-[3px] bg-sage-soft text-sage-dark">
+            {naLojaWhatsapp ? (
+              <Store className="size-4" strokeWidth={2} />
+            ) : (
+              <MessageCircle className="size-4" strokeWidth={2} />
             )}
-          >
-            <span className="grid size-10 flex-none place-items-center rounded-[4px] bg-sage text-cream">
-              {naLojaWhatsapp ? (
-                <Store className="size-5" strokeWidth={1.9} />
-              ) : (
-                <MessageCircle className="size-5" strokeWidth={1.9} />
-              )}
+          </span>
+          <span className="min-w-0 flex-1 text-[0.8125rem] font-bold text-ink">
+            {busy === "loja"
+              ? "Abrindo…"
+              : naLojaWhatsapp
+                ? "Voltar para a minha loja"
+                : "Loja de roupa (WhatsApp)"}
+          </span>
+          {naLojaWhatsapp ? null : (
+            <span className="badge flex-none bg-sage-soft text-sage-dark">
+              Conectada
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-bold text-ink">
-                {busy === "loja"
-                  ? "Abrindo…"
-                  : naLojaWhatsapp
-                    ? "Voltar para a minha loja"
-                    : "Loja de roupa (Conectada no WhatsApp)"}
-              </span>
-              <span className="mt-0.5 block truncate text-xs text-muted">
-                {naLojaWhatsapp
-                  ? "Sai da loja do WhatsApp e abre o seu exemplo"
-                  : "Vendas, compras e ofertas que chegam pelo WhatsApp"}
-              </span>
-            </span>
-          </button>
-        </section>
+          )}
+        </button>
 
         {naLojaWhatsapp ? null : (
           <section>
             <p className="eyebrow mb-2">Ramo do negócio</p>
-            <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2">
               {segments.map((item) => {
                 const Icon = SEGMENT_ICONS[item.id];
                 const selected = item.id === segment.id;
@@ -233,144 +205,93 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
                     disabled={busy !== null}
                     aria-busy={(busy === "segment" && !selected) || undefined}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-[4px] border p-3 text-left transition-colors disabled:opacity-60",
+                      "flex flex-col items-center gap-1.5 rounded-[4px] border p-2.5 text-center transition-colors disabled:opacity-60",
                       selected
                         ? "border-terracotta bg-terracotta-soft"
                         : "border-line bg-paper hover:border-sand-dark hover:bg-cream",
                     )}
                   >
-                    <span
+                    <Icon
                       className={cn(
-                        "grid size-10 flex-none place-items-center rounded-[4px]",
-                        selected
-                          ? "bg-terracotta text-cream"
-                          : "bg-sand text-ink",
+                        "size-4",
+                        selected ? "text-terracotta-dark" : "text-ink",
                       )}
-                    >
-                      <Icon className="size-5" strokeWidth={1.9} />
+                      strokeWidth={2}
+                    />
+                    <span className="text-[0.6875rem] font-semibold leading-tight text-ink">
+                      {item.label}
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-bold text-ink">
-                        {item.label}
-                      </span>
-                      <span className="mt-0.5 block truncate text-xs text-muted">
-                        {item.description}
-                      </span>
-                    </span>
-                    {selected ? (
-                      <span className="grid size-6 flex-none place-items-center rounded-[3px] bg-terracotta text-cream">
-                        <Check className="size-3.5" strokeWidth={3} />
-                      </span>
-                    ) : null}
                   </button>
                 );
               })}
             </div>
-            <p className="mt-2 text-[0.6875rem] leading-snug text-muted">
-              Trocar de ramo recomeça os dados deste exemplo.
-            </p>
           </section>
         )}
 
         <section>
           <p className="eyebrow mb-2">Atalhos</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="divide-y divide-line rounded-[4px] border border-line bg-paper">
             {[
+              { label: "Fornecedores", href: "/fornecedores" },
+              { label: "Contas a pagar", href: "/contas" },
+              { label: "Análises", href: "/analises" },
+              { label: "Importar planilha/XML", href: "/importar" },
               {
-                label: "Fornecedores",
-                icon: Truck,
-                href: "/fornecedores",
+                label: "WhatsApp e integrações",
+                href: naLojaWhatsapp ? "/whatsapp" : "/integracoes",
+                status: naLojaWhatsapp ? "Conectado" : "Não conectado",
               },
-              {
-                label: "Contas a pagar",
-                icon: ReceiptText,
-                href: "/contas",
-              },
-              {
-                label: "Análises",
-                icon: TrendingUp,
-                href: "/analises",
-              },
-              {
-                label: "Importar planilha",
-                icon: FileSpreadsheet,
-                href: "/importar",
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.href}
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    router.push(item.href);
-                  }}
-                  className="btn btn-secondary h-auto flex-col items-start gap-2 px-3 py-3 text-left text-xs"
-                >
-                  <Icon className="size-4 text-terracotta-dark" strokeWidth={2} />
-                  {item.label}
-                </button>
-              );
-            })}
+            ].map((item) => (
+              <button
+                key={item.href}
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(item.href);
+                }}
+                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-[0.8125rem] font-semibold text-ink transition-colors hover:bg-cream"
+              >
+                <span>{item.label}</span>
+                {item.status ? (
+                  <span
+                    className={cn(
+                      "text-[0.625rem] font-bold",
+                      item.status === "Conectado"
+                        ? "text-sage-dark"
+                        : "text-mustard-dark",
+                    )}
+                  >
+                    {item.status}
+                  </span>
+                ) : null}
+              </button>
+            ))}
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              router.push(naLojaWhatsapp ? "/whatsapp" : "/integracoes");
-            }}
-            className="mt-2 flex w-full items-center gap-3 rounded-[4px] border border-line bg-cream p-3 text-left transition-colors hover:border-sand-dark hover:bg-sand/60"
-          >
-            <span className="grid size-9 flex-none place-items-center rounded-[4px] bg-sage-soft text-sage-dark">
-              <MessageCircle className="size-4" strokeWidth={2} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[0.8125rem] font-bold text-ink">
-                {naLojaWhatsapp ? "WhatsApp da loja" : "WhatsApp e integrações"}
-              </span>
-              <span className="mt-0.5 block text-[0.6875rem] text-muted">
-                {naLojaWhatsapp
-                  ? "Vendas, compras e ofertas que chegaram pelo WhatsApp"
-                  : "Prepare o número e veja os canais de entrada"}
-              </span>
-            </span>
-            {naLojaWhatsapp ? (
-              <span className="badge bg-sage-soft text-sage-dark">
-                Conectado
-              </span>
-            ) : (
-              <span className="badge bg-mustard-soft text-mustard-dark">
-                Não conectado
-              </span>
-            )}
-          </button>
         </section>
 
         <section>
           <p className="eyebrow mb-2">Testar</p>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.6875rem] font-semibold text-muted">
             <button
               type="button"
               onClick={() => void handleSimulate()}
               disabled={busy !== null}
-              aria-busy={busy === "audio" || undefined}
-              className="btn btn-secondary h-auto flex-col items-start gap-2 px-3 py-3 text-left text-xs disabled:opacity-60"
+              className="underline underline-offset-2 hover:text-ink disabled:opacity-60"
             >
-              <Mic className="size-4 text-mustard-dark" strokeWidth={2} />
               {busy === "audio" ? "Enviando…" : "Simular áudio"}
             </button>
             {naLojaWhatsapp ? null : (
-              <button
-                type="button"
-                onClick={() => setConfirmReset(true)}
-                disabled={busy !== null}
-                className="btn btn-secondary h-auto flex-col items-start gap-2 px-3 py-3 text-left text-xs disabled:opacity-60"
-              >
-                <RotateCcw className="size-4 text-muted" strokeWidth={2} />
-                Restaurar exemplo
-              </button>
+              <>
+                <span aria-hidden>·</span>
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(true)}
+                  disabled={busy !== null}
+                  className="underline underline-offset-2 hover:text-ink disabled:opacity-60"
+                >
+                  Restaurar exemplo
+                </button>
+              </>
             )}
           </div>
 
@@ -404,35 +325,23 @@ export function MoreSheet({ onClose }: MoreSheetProps) {
           ) : null}
         </section>
 
-        <div
-          className={cn(
-            "rounded-[4px] border p-3",
-            mode === "cloud"
-              ? "border-sage/35 bg-sage-soft"
-              : cloudStatus === "error"
-                ? "border-terracotta/30 bg-terracotta-soft"
-                : "border-line bg-cream",
-          )}
-        >
-          <p className="flex items-center gap-2 text-xs font-bold text-ink">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[0.6875rem] text-muted">
+          <span className="flex items-center gap-1.5">
             {mode === "cloud" ? (
-              <Cloud className="size-3.5 flex-none text-sage-dark" strokeWidth={2} />
+              <Cloud className="size-3.5 text-sage-dark" strokeWidth={2} />
             ) : (
-              <CloudOff className="size-3.5 flex-none text-muted" strokeWidth={2} />
+              <CloudOff className="size-3.5" strokeWidth={2} />
             )}
             {connectionTitle}
-          </p>
-          <p className="mt-1.5 text-[0.6875rem] leading-relaxed text-muted">
-            {connectionMessage}
-          </p>
+          </span>
           {canRetry ? (
             <button
               type="button"
               onClick={() => void retryCloud()}
-              className="mt-2 inline-flex items-center gap-1.5 text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2 transition-colors hover:text-ink"
+              className="inline-flex items-center gap-1 font-bold text-terracotta-dark underline underline-offset-2"
             >
               <RefreshCw className="size-3" strokeWidth={2.4} />
-              Tentar conectar de novo
+              Tentar de novo
             </button>
           ) : null}
         </div>

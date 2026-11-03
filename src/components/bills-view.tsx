@@ -1,17 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import {
-  AlertTriangle,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Plus,
-  ReceiptText,
   Trash2,
-  Undo2,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { useActions } from "./action-provider";
@@ -23,19 +18,19 @@ import {
   summarizePayables,
 } from "@/lib/analytics";
 import { formatBRL } from "@/lib/format";
-import { PAYMENT_METHOD_LABELS, type Bill } from "@/lib/types";
+import { cn } from "@/lib/cn";
+import type { Bill } from "@/lib/types";
 
-function BillCard({ bill }: { bill: Bill }) {
+function BillRow({ bill }: { bill: Bill }) {
   const { suppliers, deleteBill } = useApp();
-  const { openPayBill, openTransaction } = useActions();
+  const { openPayBill } = useActions();
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const supplier = bill.supplierId
     ? suppliers.find((item) => item.id === bill.supplierId)
     : undefined;
-  const diff = daysUntil(bill.dueDate);
-  const overdue = diff < 0;
+  const overdue = daysUntil(bill.dueDate) < 0;
 
   async function handleDelete() {
     if (deleting) return;
@@ -54,87 +49,66 @@ function BillCard({ bill }: { bill: Bill }) {
   }
 
   return (
-    <div className="rounded-[4px] border border-line bg-paper">
-      <div className="flex items-start gap-3 p-3">
-        <span
-          className={
-            overdue
-              ? "grid size-9 flex-none place-items-center rounded-[4px] bg-terracotta-soft text-terracotta-dark"
-              : "grid size-9 flex-none place-items-center rounded-[4px] bg-mustard-soft text-mustard-dark"
-          }
-        >
-          {overdue ? (
-            <AlertTriangle className="size-4" strokeWidth={2.1} />
-          ) : (
-            <ReceiptText className="size-4" strokeWidth={2} />
-          )}
-        </span>
+    <div className="px-3 py-3">
+      <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[0.875rem] font-bold leading-tight text-ink">
+          <p className="truncate text-[0.8125rem] font-bold leading-tight text-ink">
             {bill.description}
           </p>
           <p className="mt-0.5 truncate text-[0.6875rem] text-muted">
             {supplier ? `${supplier.name} · ` : ""}
             {dueDateLabel(bill.dueDate)} · {formatDateOnly(bill.dueDate)}
           </p>
-          {bill.paymentMethod ? (
-            <p className="mt-0.5 text-[0.625rem] text-muted">
-              Pretendido: {PAYMENT_METHOD_LABELS[bill.paymentMethod]}
-            </p>
-          ) : null}
         </div>
-        <div className="flex flex-none flex-col items-end gap-1.5">
-          <span className="text-[0.9375rem] font-bold text-ink tabular">
-            {formatBRL(bill.amountCents)}
-          </span>
-          <button
-            type="button"
-            onClick={() => openPayBill(bill.id)}
-            className="btn btn-secondary h-8 px-2.5 text-[0.6875rem]"
-          >
-            Pagar
-          </button>
-        </div>
+        <span
+          className={cn(
+            "flex-none text-[0.8125rem] font-bold tabular",
+            overdue ? "text-terracotta-dark" : "text-ink",
+          )}
+        >
+          {formatBRL(bill.amountCents)}
+        </span>
+        <button
+          type="button"
+          onClick={() => openPayBill(bill.id)}
+          className="btn btn-secondary h-8 flex-none px-2.5 text-[0.6875rem]"
+        >
+          Pagar
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          aria-label={`Apagar ${bill.description}`}
+          className="grid size-8 flex-none place-items-center rounded-[3px] text-muted transition-colors hover:bg-cream hover:text-terracotta-dark"
+        >
+          <Trash2 className="size-3.5" strokeWidth={2} />
+        </button>
       </div>
 
       {confirming ? (
-        <div className="animate-rise border-t border-terracotta/20 bg-terracotta-soft p-3">
-          <p className="text-xs font-semibold text-terracotta-dark">
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-[3px] bg-terracotta-soft px-2 py-1.5">
+          <span className="text-[0.625rem] font-semibold text-terracotta-dark">
             Apagar esta conta?
-          </p>
-          <p className="mt-0.5 text-[0.6875rem] text-ink/75">
-            Só contas em aberto podem ser apagadas.
-          </p>
-          <div className="mt-2 flex gap-2">
+          </span>
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setConfirming(false)}
-              className="btn btn-secondary h-9 flex-1 text-xs"
+              className="text-[0.625rem] font-bold text-muted"
             >
-              <Undo2 className="size-3.5" strokeWidth={2} />
-              Cancelar
+              Não
             </button>
             <button
               type="button"
               onClick={() => void handleDelete()}
               disabled={deleting}
-              className="btn h-9 flex-1 bg-terracotta-dark text-xs text-cream"
+              className="text-[0.625rem] font-bold text-terracotta-dark"
             >
-              <Trash2 className="size-3.5" strokeWidth={2} />
               {deleting ? "Apagando…" : "Apagar"}
             </button>
           </div>
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          className="flex w-full items-center gap-1.5 border-t border-line/70 px-3 py-2 text-[0.625rem] font-bold text-muted transition-colors hover:bg-cream hover:text-terracotta-dark"
-        >
-          <Trash2 className="size-3" strokeWidth={2.2} />
-          Apagar conta
-        </button>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -154,17 +128,15 @@ export function BillsView() {
       .filter((bill) => bill.status === "open")
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
     const overdue: Bill[] = [];
-    const today: Bill[] = [];
-    const week: Bill[] = [];
+    const next7: Bill[] = [];
     const later: Bill[] = [];
     for (const bill of open) {
       const diff = daysUntil(bill.dueDate);
       if (diff < 0) overdue.push(bill);
-      else if (diff === 0) today.push(bill);
-      else if (diff <= 7) week.push(bill);
+      else if (diff <= 7) next7.push(bill);
       else later.push(bill);
     }
-    return { open, overdue, today, week, later };
+    return { open, overdue, next7, later };
   }, [bills]);
 
   const paid = useMemo(
@@ -180,28 +152,18 @@ export function BillsView() {
     {
       key: "overdue",
       title: "Atrasadas",
-      description: "Melhor resolver primeiro.",
       items: groups.overdue,
       tone: "text-terracotta-dark",
     },
     {
-      key: "today",
-      title: "Vencem hoje",
-      description: "Pagamento para hoje.",
-      items: groups.today,
-      tone: "text-mustard-dark",
-    },
-    {
-      key: "week",
+      key: "next7",
       title: "Próximos 7 dias",
-      description: "Dá para se organizar.",
-      items: groups.week,
+      items: groups.next7,
       tone: "text-ink",
     },
     {
       key: "later",
       title: "Mais para frente",
-      description: "Sem pressa, mas no radar.",
       items: groups.later,
       tone: "text-ink",
     },
@@ -211,13 +173,11 @@ export function BillsView() {
     <div className="mx-auto w-full max-w-[1120px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-9">
       <header className="animate-rise flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">Previsão de pagamento</p>
-          <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
+          <h1 className="display text-[1.75rem] leading-[1.05] text-ink sm:text-[2rem]">
             Contas a pagar
           </h1>
-          <p className="mt-2 max-w-[34rem] text-sm leading-relaxed text-muted">
-            A conta entra aqui quando você compra a prazo. O caixa só muda no
-            dia do pagamento.
+          <p className="mt-1.5 text-[0.8125rem] text-muted">
+            O caixa só muda quando você paga.
           </p>
         </div>
         <button
@@ -230,85 +190,46 @@ export function BillsView() {
         </button>
       </header>
 
-      <div className="animate-rise mt-6 grid gap-2.5 sm:grid-cols-3">
-        <div className="rounded-[4px] border border-line bg-paper p-4">
-          <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-muted">
-            Em aberto
-          </p>
-          <p className="mt-1 text-[1.65rem] font-extrabold tracking-tight text-ink tabular">
+      <div className="animate-rise mt-5 flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-[4px] border border-line bg-paper px-3 py-2.5 text-[0.75rem] text-muted">
+        <span>
+          <strong className="text-ink tabular">
             {formatBRL(summary.openTotalCents)}
-          </p>
-          <p className="mt-0.5 text-[0.6875rem] text-muted">
-            {summary.openCount}{" "}
-            {summary.openCount === 1 ? "conta" : "contas"}
-          </p>
-        </div>
-        <div className="rounded-[4px] border border-terracotta/30 bg-terracotta-soft p-4">
-          <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-terracotta-dark">
-            Atrasado
-          </p>
-          <p className="mt-1 text-[1.65rem] font-extrabold tracking-tight text-terracotta-dark tabular">
-            {formatBRL(summary.overdueTotalCents)}
-          </p>
-          <p className="mt-0.5 text-[0.6875rem] text-terracotta-dark/80">
-            {summary.overdueCount}{" "}
-            {summary.overdueCount === 1 ? "conta" : "contas"}
-          </p>
-        </div>
-        <div className="rounded-[4px] border border-mustard/40 bg-mustard-soft p-4">
-          <p className="text-[0.625rem] font-bold uppercase tracking-[0.1em] text-mustard-dark">
-            Próximos 7 dias
-          </p>
-          <p className="mt-1 text-[1.65rem] font-extrabold tracking-tight text-mustard-dark tabular">
-            {formatBRL(summary.next7TotalCents)}
-          </p>
-          <p className="mt-0.5 text-[0.6875rem] text-mustard-dark/80">
-            {summary.next7Count}{" "}
-            {summary.next7Count === 1 ? "conta" : "contas"}
-          </p>
-        </div>
+          </strong>{" "}
+          em aberto
+        </span>
+        {summary.overdueTotalCents > 0 ? (
+          <span className="text-terracotta-dark">
+            <strong className="tabular">
+              {formatBRL(summary.overdueTotalCents)}
+            </strong>{" "}
+            atrasado
+          </span>
+        ) : null}
+        {summary.next7TotalCents > 0 ? (
+          <span className="text-mustard-dark">
+            <strong className="tabular">
+              {formatBRL(summary.next7TotalCents)}
+            </strong>{" "}
+            nos próximos 7 dias
+          </span>
+        ) : null}
       </div>
 
-      {summary.nextPayment ? (
-        <div className="mt-3 flex items-center gap-2.5 rounded-[4px] border border-line bg-cream p-3">
-          <CalendarClock
-            className="size-4 flex-none text-muted"
-            strokeWidth={2}
-          />
-          <p className="min-w-0 flex-1 text-xs text-ink">
-            Próximo pagamento:{" "}
-            <strong>
-              {formatBRL(summary.nextPayment.totalCents)}
-            </strong>{" "}
-            em {formatDateOnly(summary.nextPayment.dueDate)}
-            {summary.nextPayment.count > 1
-              ? ` (${summary.nextPayment.count} contas)`
-              : ""}
-          </p>
-          <Link
-            href="/analises"
-            className="flex-none text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
-          >
-            Ver previsão
-          </Link>
-        </div>
-      ) : null}
-
       {groups.open.length > 0 ? (
-        <div className="mt-6 space-y-6">
+        <div className="mt-5 space-y-5">
           {sections.map((section) =>
             section.items.length > 0 ? (
               <section key={section.key} className="animate-rise">
-                <div className="mb-2 flex items-end justify-between gap-3">
-                  <div>
-                    <h2 className={`display text-xl leading-none ${section.tone}`}>
-                      {section.title}
-                    </h2>
-                    <p className="mt-1 text-[0.6875rem] text-muted">
-                      {section.description}
-                    </p>
-                  </div>
-                  <span className="pb-0.5 text-[0.6875rem] font-semibold text-muted">
+                <div className="mb-2 flex items-baseline justify-between gap-3">
+                  <h2
+                    className={cn(
+                      "text-[0.6875rem] font-bold uppercase tracking-[0.1em]",
+                      section.tone,
+                    )}
+                  >
+                    {section.title}
+                  </h2>
+                  <span className="text-[0.6875rem] font-semibold text-muted">
                     {formatBRL(
                       section.items.reduce(
                         (total, bill) => total + bill.amountCents,
@@ -317,9 +238,9 @@ export function BillsView() {
                     )}
                   </span>
                 </div>
-                <div className="grid gap-2 md:grid-cols-2">
+                <div className="divide-y divide-line rounded-[4px] border border-line bg-paper">
                   {section.items.map((bill) => (
-                    <BillCard key={bill.id} bill={bill} />
+                    <BillRow key={bill.id} bill={bill} />
                   ))}
                 </div>
               </section>
@@ -327,51 +248,47 @@ export function BillsView() {
           )}
         </div>
       ) : (
-        <div className="animate-rise mt-6 rounded-[4px] border border-sage/35 bg-sage-soft p-5 text-center">
-          <span className="mx-auto grid size-12 place-items-center rounded-[4px] bg-paper text-sage-dark">
-            <CheckCircle2 className="size-6" strokeWidth={2} />
-          </span>
-          <h2 className="display mt-3 text-xl text-ink">Tudo em dia</h2>
-          <p className="mx-auto mt-1 max-w-[22rem] text-xs leading-relaxed text-muted">
-            Nenhuma conta em aberto. Quando comprar a prazo, ela aparece aqui
-            com o vencimento.
+        <div className="animate-rise mt-5 rounded-[4px] border border-dashed border-sand-dark bg-paper px-5 py-6 text-center">
+          <h2 className="text-sm font-bold text-ink">
+            Nenhuma conta em aberto
+          </h2>
+          <p className="mt-1 text-xs text-muted">
+            Quando comprar a prazo, ela aparece aqui.
           </p>
           <button
             type="button"
             onClick={() => openBill()}
-            className="btn btn-primary mt-4"
+            className="btn btn-primary mt-3 h-10 px-4 text-xs"
           >
-            <Plus className="size-4" strokeWidth={2.4} />
+            <Plus className="size-3.5" strokeWidth={2.4} />
             Adicionar conta
           </button>
         </div>
       )}
 
       {paid.length > 0 ? (
-        <section className="mt-7">
+        <section className="mt-6">
           <button
             type="button"
             onClick={() => setShowPaid((value) => !value)}
-            className="flex w-full items-center justify-between gap-3 rounded-[4px] border border-line bg-paper px-3.5 py-3 text-left"
+            className="flex w-full items-center justify-between gap-3 py-2 text-left"
             aria-expanded={showPaid}
           >
-            <span>
-              <span className="block text-sm font-bold text-ink">
-                Contas pagas
-              </span>
-              <span className="mt-0.5 block text-[0.6875rem] text-muted">
-                Últimas {paid.length} pagas
-              </span>
+            <span className="text-[0.6875rem] font-bold uppercase tracking-[0.1em] text-muted">
+              Contas pagas
             </span>
-            {showPaid ? (
-              <ChevronUp className="size-4 text-muted" strokeWidth={2} />
-            ) : (
-              <ChevronDown className="size-4 text-muted" strokeWidth={2} />
-            )}
+            <span className="flex items-center gap-1 text-[0.6875rem] text-muted">
+              {paid.length}
+              {showPaid ? (
+                <ChevronUp className="size-3.5" strokeWidth={2} />
+              ) : (
+                <ChevronDown className="size-3.5" strokeWidth={2} />
+              )}
+            </span>
           </button>
 
           {showPaid ? (
-            <div className="animate-rise mt-2 divide-y divide-line overflow-hidden rounded-[4px] border border-line bg-paper">
+            <div className="animate-rise divide-y divide-line rounded-[4px] border border-line bg-paper">
               {paid.map((bill) => {
                 const supplier = bill.supplierId
                   ? suppliers.find((item) => item.id === bill.supplierId)
@@ -386,13 +303,14 @@ export function BillsView() {
                         : undefined
                     }
                     disabled={!bill.transactionId}
-                    className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-cream disabled:hover:bg-transparent"
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-cream disabled:hover:bg-transparent"
                   >
-                    <span className="grid size-8 flex-none place-items-center rounded-[3px] bg-sage-soft text-sage-dark">
-                      <CheckCircle2 className="size-4" strokeWidth={2} />
-                    </span>
+                    <CheckCircle2
+                      className="size-3.5 flex-none text-sage-dark"
+                      strokeWidth={2}
+                    />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[0.8125rem] font-semibold text-ink">
+                      <span className="block truncate text-[0.75rem] font-semibold text-ink">
                         {bill.description}
                       </span>
                       <span className="mt-0.5 block truncate text-[0.625rem] text-muted">
@@ -403,7 +321,7 @@ export function BillsView() {
                           : formatDateOnly(bill.dueDate)}
                       </span>
                     </span>
-                    <span className="flex-none text-[0.8125rem] font-bold text-muted tabular line-through">
+                    <span className="flex-none text-[0.75rem] font-bold text-muted tabular line-through">
                       {formatBRL(bill.amountCents)}
                     </span>
                   </button>

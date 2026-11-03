@@ -7,7 +7,6 @@ import { BalanceCard } from "./balance-card";
 import { QuickActions } from "./quick-actions";
 import { PendingReviewCard } from "./pending-review-card";
 import { ActivityFeed } from "./activity-feed";
-import { PayablesCard } from "./payables-card";
 
 export function HomeView() {
   const { business, cloudStatus, cloudMessage, retryCloud } = useApp();
@@ -16,7 +15,7 @@ export function HomeView() {
     <div className="mx-auto w-full max-w-[1120px] px-4 pb-10 pt-6 sm:px-6 lg:px-8 lg:pt-9">
       <header className="animate-rise">
         <p className="eyebrow">{formatLongDate()}</p>
-        <h1 className="display mt-1.5 text-[2rem] leading-[1.05] text-ink sm:text-[2.5rem]">
+        <h1 className="display mt-1.5 text-[1.75rem] leading-[1.05] text-ink sm:text-[2rem]">
           Oi, {business.ownerName}.
         </h1>
       </header>
@@ -55,7 +54,6 @@ export function HomeView() {
         </div>
 
         <div className="space-y-5">
-          <PayablesCard />
           <ActivityFeed />
         </div>
       </div>

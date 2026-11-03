@@ -145,7 +145,7 @@ export function ActivityFeed() {
       <div className="flex items-end justify-between gap-3 pb-3">
         <h2
           id="feed-title"
-          className="display text-[1.65rem] leading-none text-ink"
+          className="display text-xl leading-none text-ink"
         >
           Movimentações
         </h2>
