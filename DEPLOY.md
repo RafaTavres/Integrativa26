@@ -2,19 +2,34 @@
 
 Guia para colocar o app no ar fora da sua máquina. São duas variáveis de ambiente e uma imagem Docker (ou um projeto na Vercel).
 
-O app é **Next.js + Supabase**. Não existe backend próprio além de três rotas leves:
+## Qual caminho escolher
+
+| Se você... | Use |
+| --- | --- |
+| quer o caminho mais rápido e aceita usar webhook de e-mail | **Vercel** |
+| quer todos os recursos, inclusive IMAP, e um domínio próprio | **VPS com Docker + Caddy** |
+| quer Docker sem administrar servidor | **Railway/Render** (plano pago) |
+
+O túnel **Quick Tunnel** do `compose.yaml` é só para demonstração: a URL muda a cada reinício. Para produção, use **domínio + Caddy** ou um **túnel nomeado** da Cloudflare.
+
+O app é **Next.js + Supabase**. Não existe backend próprio além das rotas leves:
 
 | Rota | Papel |
 | --- | --- |
 | `GET /api/config` | Entrega URL e chave pública do Supabase em tempo de execução. |
 | `GET /api/health` | Health check (`{"ok":true,"supabase":"configured"}`). |
 | `GET /api/integrations` | Contrato público para WhatsApp, e-mail/XML, QR Code e demais conectores. |
+| `POST /api/nfce` | Consulta a SEFAZ a partir do QR Code da NFC-e. |
+| `POST /api/inbound/email` | Webhook de e-mail com anexo XML em base64. |
+| `POST /api/inbound/imap` | Worker IMAP que busca XMLs e grava a fila de e-mails pendentes. |
 
 Como a configuração é lida a cada requisição, **trocar de projeto Supabase não exige rebuild**.
 
 A leitura de foto roda no navegador com **Tesseract.js**. O `npm run build` copia o worker e o núcleo WebAssembly para `public/tesseract`, e o idioma português (`por.traineddata.gz`) é versionado. Não existe serviço de OCR externo para configurar; a imagem não é enviada ao servidor.
 
-A tela `/integracoes` é servida pelo próprio app e não tem configuração de servidor nesta versão: ela mostra o WhatsApp como **não conectado** e guarda apenas o número e as preferências no `localStorage` do navegador (`estokar:whatsapp:v1`). Nenhuma credencial de WhatsApp existe hoje no projeto.
+A tela `/integracoes` mostra o estado real de cada canal: planilha, foto/áudio, XML e QR Code funcionam; o WhatsApp da própria loja continua **não conectado**. A loja de demonstração em `/whatsapp` é alimentada pelo n8n. Nenhuma credencial de WhatsApp existe hoje no projeto.
+
+O worker de e-mail é opcional. Sem `EMAIL_IMAP_*` e `SUPABASE_SERVICE_ROLE_KEY`, a fila de e-mails fica vazia e o XML pode ser enviado manualmente em **Importar**.
 
 ---
 
@@ -30,7 +45,7 @@ A tela `/integracoes` é servida pelo próprio app e não tem configuração de 
    - **Project URL** → `SUPABASE_URL`
    - **Publishable key** (ou `anon`) → `SUPABASE_ANON_KEY`
 
-> **Nunca use `service_role`/`sb_secret_` no app.** Essa chave ignora o RLS e dá acesso total ao banco. O código recusa a configuração se detectar uma chave secreta.
+> **Nunca use `service_role`/`sb_secret_` no navegador.** Essa chave ignora o RLS e dá acesso total ao banco. O app do navegador só usa a publishable/anon; a única exceção é o worker de e-mail no servidor (`SUPABASE_SERVICE_ROLE_KEY`), que nunca é enviado ao cliente.
 
 ### Teste rápido do banco
 
@@ -70,6 +85,10 @@ Se as tabelas existirem, o schema foi aplicado.
 7. Cada `git push` na branch `main` gera um deploy novo. Variáveis alteradas exigem **Redeploy** (elas são lidas em runtime, mas o deploy precisa ser recriado para pegar o novo valor).
 
 > A Vercel usa Node 20+ por padrão. Se o projeto estiver em uma versão antiga, ajuste em **Settings → General → Node.js Version** para 22.
+
+> **IMPORTANTE — e-mail automático na Vercel:** a Vercel não mantém um worker IMAP de longa duração. Nela, use o webhook do provedor (`POST /api/inbound/email`) ou envie o XML manualmente. O QR/SEFAZ, o OCR e o restante do app funcionam normalmente. O worker IMAP é para VPS/Docker.
+
+> Para o QR/SEFAZ, a Vercel precisa conseguir acessar os portais `.gov.br`. Isso funciona nas rotas serverless, mas alguns estados com captcha vão cair no fallback de XML, como em qualquer host.
 
 ---
 
@@ -127,6 +146,16 @@ echo "APP_BIND=127.0.0.1" >> .env
 docker compose up -d
 ```
 
+### Domínio e DNS
+
+No painel do seu provedor de domínio, crie um registro **A**:
+
+```text
+estokar.seudominio.com  →  IP_DO_VPS
+```
+
+Aguarde a propagação. O mesmo endereço deve ser usado no Caddy e na **Site URL** do Supabase.
+
 ### HTTPS com Caddy (recomendado)
 
 Com um domínio apontando para o IP do servidor, o Caddy emite e renova o certificado sozinho.
@@ -159,6 +188,50 @@ sudo ufw enable
 ```
 
 Não abra a porta 3000 para a internet quando houver proxy reverso.
+
+### E-mail automático no VPS
+
+Preencha no `.env` (servidor):
+
+```bash
+EMAIL_INGESTION_SECRET=um-segredo-forte
+EMAIL_IMAP_HOST=imap.seuprovedor.com
+EMAIL_IMAP_PORT=993
+EMAIL_IMAP_SECURE=true
+EMAIL_IMAP_USER=notas@seudominio.com
+EMAIL_IMAP_PASSWORD=sua-senha-de-app
+EMAIL_IMAP_MAILBOX=INBOX
+EMAIL_IMAP_BUSINESS_ID=id-do-negocio
+SUPABASE_SERVICE_ROLE_KEY=chave-secreta-do-supabase
+```
+
+O `EMAIL_IMAP_BUSINESS_ID` é o `id` do seu negócio na tabela `businesses`. A `SUPABASE_SERVICE_ROLE_KEY` fica só no servidor e é usada apenas pelo worker para gravar em `ingestion_events`.
+
+Crie um script de verificação:
+
+```bash
+cat > ~/estokar-email.sh <<'EOF'
+#!/usr/bin/env bash
+set -a
+source /home/SEU_USUARIO/Integrativa26/.env
+set +a
+curl -fsS -X POST https://estokar.seudominio.com/api/inbound/imap \
+  -H "Authorization: Bearer $EMAIL_INGESTION_SECRET" >/dev/null
+EOF
+chmod +x ~/estokar-email.sh
+```
+
+Agende no cron a cada 10 minutos:
+
+```bash
+crontab -e
+```
+
+```cron
+*/10 * * * * /home/SEU_USUARIO/estokar-email.sh
+```
+
+Os XMLs aparecem em **Integrações → E-mails de fornecedor** e são importados com um clique.
 
 ### Atualizar
 
@@ -233,7 +306,17 @@ No `fly.toml`, mantenha `internal_port = 3000`.
 | `SUPABASE_ANON_KEY` | sim | navegador (via `/api/config`) | Publishable/anon. Protegida pelo RLS. |
 | `APP_PORT` | não | Compose | Porta publicada no host (padrão `3000`). |
 | `APP_BIND` | não | Compose | Interface de bind (padrão `0.0.0.0`; use `127.0.0.1` com proxy). |
+| `DOMAIN` | não | Caddy | Domínio público para HTTPS automático. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | não | Compose | Só para túnel nomeado permanente. |
+| `EMAIL_INGESTION_SECRET` | não | servidor | Segredo do webhook e do worker IMAP. Sem ele, os endpoints de e-mail respondem `503`. |
+| `EMAIL_IMAP_HOST` | não | servidor | Host IMAP da caixa de entrada. |
+| `EMAIL_IMAP_PORT` | não | servidor | Padrão `993`. |
+| `EMAIL_IMAP_SECURE` | não | servidor | Padrão `true`. |
+| `EMAIL_IMAP_USER` | não | servidor | Usuário da caixa. |
+| `EMAIL_IMAP_PASSWORD` | não | servidor | Senha de app, nunca a senha principal. |
+| `EMAIL_IMAP_MAILBOX` | não | servidor | Padrão `INBOX`. |
+| `EMAIL_IMAP_BUSINESS_ID` | não | servidor | `id` do negócio em `businesses`, para gravar os XMLs pendentes. |
+| `SUPABASE_SERVICE_ROLE_KEY` | não | servidor | Só para o worker IMAP gravar em `ingestion_events`. Nunca no navegador. |
 
 Os nomes antigos `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` ainda são aceitos como fallback, mas não são necessários: a configuração é entregue por `/api/config` e não entra no bundle.
 
@@ -251,11 +334,13 @@ A preparação do WhatsApp feita em `/integracoes` **não usa variável de ambie
 - [ ] `/api/health` responde `"supabase":"configured"`
 - [ ] `/api/integrations` responde com o contrato (versão 1)
 - [ ] `/integracoes` abre com o WhatsApp em **não conectado** e o aviso de preparação local
-- [ ] HTTPS funcionando (Vercel/Caddy)
-- [ ] Domínio final cadastrado na **Site URL** do Supabase
+- [ ] Domínio apontando para o servidor (registro A) e HTTPS funcionando (Vercel/Caddy)
+- [ ] **Site URL** e **Redirect URLs** do Supabase atualizadas com o domínio final
+- [ ] Se usar e-mail automático: `EMAIL_*`, `EMAIL_IMAP_BUSINESS_ID` e `SUPABASE_SERVICE_ROLE_KEY` configurados, e cron do `/api/inbound/imap` agendado
 - [ ] Porta do app não exposta publicamente no VPS
+- [ ] Quick Tunnel desligado em produção (use domínio + Caddy ou túnel nomeado)
 - [ ] Backup do banco configurado (próxima seção)
-- [ ] Nenhuma chave `service_role` no repositório, no bundle ou no painel do host
+- [ ] Nenhuma chave `service_role` no repositório, no bundle ou no painel do host; a exceção é o worker de e-mail no servidor
 
 ---
 
