@@ -19,6 +19,7 @@ import { useActions } from "./action-provider";
 import { useApp } from "@/lib/store";
 import { useToast } from "./toast";
 import { formatBRL, formatBRLInput, parseMoneyInput } from "@/lib/format";
+import { cn } from "@/lib/cn";
 import { formatAudioDuration, parseAudioTranscript } from "@/lib/audio";
 import {
   getSpeechRecognitionConstructor,
@@ -31,6 +32,7 @@ import type { PaymentMethod } from "@/lib/types";
 const MAX_SECONDS = 90;
 
 type Phase = "record" | "review" | "success";
+type AudioMode = "both" | "transcribe" | "record";
 
 interface AudioSheetProps {
   onClose: () => void;
@@ -88,6 +90,8 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
   const [recordingSupported, setRecordingSupported] = useState<boolean | null>(
     null,
   );
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [mode, setMode] = useState<AudioMode>("both");
 
   const [productId, setProductId] = useState<string | undefined>();
   const [quantity, setQuantity] = useState(1);
@@ -122,12 +126,22 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
   const amountCents = parseMoneyInput(amountInput);
 
   useEffect(() => {
-    setSpeechSupported(Boolean(getSpeechRecognitionConstructor()));
-    setRecordingSupported(
+    const hasSpeech = Boolean(getSpeechRecognitionConstructor());
+    const hasRecorder =
       typeof window !== "undefined" &&
-        typeof window.MediaRecorder !== "undefined" &&
-        Boolean(navigator.mediaDevices?.getUserMedia),
-    );
+      typeof window.MediaRecorder !== "undefined" &&
+      Boolean(navigator.mediaDevices?.getUserMedia);
+    const android = /Android/i.test(navigator.userAgent);
+
+    setSpeechSupported(hasSpeech);
+    setRecordingSupported(hasRecorder);
+    setIsAndroid(android);
+
+    // No Android, o microfone só pode ser usado por uma API por vez:
+    // MediaRecorder e SpeechRecognition não funcionam juntos.
+    if (hasSpeech && hasRecorder) setMode(android ? "transcribe" : "both");
+    else if (hasSpeech) setMode("transcribe");
+    else setMode("record");
   }, []);
 
   // Solta microfone, transcrição, timers e o áudio temporário ao fechar.
@@ -186,11 +200,12 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
       .replace(/\s+/g, " ")
       .trim();
     setTranscript(finalTranscriptRef.current);
+    setSpeechError(null);
   }
 
-  function startRecognition() {
+  function startRecognition(): boolean {
     const Recognition = getSpeechRecognitionConstructor();
-    if (!Recognition) return;
+    if (!Recognition) return false;
 
     try {
       const recognition = new Recognition();
@@ -198,6 +213,10 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setSpeechError(null);
+      };
 
       recognition.onresult = (event) => {
         let finalText = "";
@@ -240,11 +259,13 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
       keepListeningRef.current = true;
       recognition.start();
       recognitionRef.current = recognition;
+      return true;
     } catch {
       keepListeningRef.current = false;
       setSpeechError(
         "Não conseguimos iniciar a transcrição automática. Você pode escrever o que falou.",
       );
+      return false;
     }
   }
 
@@ -258,6 +279,7 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
     }
 
     const recognition = recognitionRef.current;
+    const hadRecognition = Boolean(recognition);
     recognitionRef.current = null;
     if (recognition) {
       try {
@@ -284,6 +306,21 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
       interimRef.current = "";
       setInterim("");
     }
+
+    if (
+      hadRecognition &&
+      mode !== "record" &&
+      speechSupported !== false
+    ) {
+      window.setTimeout(() => {
+        if (!mountedRef.current || finalTranscriptRef.current.trim()) return;
+        setSpeechError(
+          isAndroid
+            ? "Não captamos fala para transcrever. Fale mais perto do microfone ou use o modo Gravar áudio."
+            : "Não captamos fala para transcrever. Tente falar mais perto do microfone ou escreva o que vendeu.",
+        );
+      }, 900);
+    }
   }
 
   async function startRecording() {
@@ -296,10 +333,41 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
     finalTranscriptRef.current = "";
     interimRef.current = "";
 
-    if (!navigator.mediaDevices?.getUserMedia) {
+    const wantsSpeech = mode !== "record" && speechSupported !== false;
+    const wantsRecorder = mode !== "transcribe" && recordingSupported !== false;
+
+    if (!wantsSpeech && !wantsRecorder) {
       setMicError(
         "Este navegador não permite gravar áudio aqui. Você pode escrever o que vendeu.",
       );
+      return;
+    }
+
+    if (wantsRecorder && !navigator.mediaDevices?.getUserMedia) {
+      setMicError(
+        "Este navegador não permite gravar áudio aqui. Você pode escrever o que vendeu.",
+      );
+      return;
+    }
+
+    if (wantsSpeech && !getSpeechRecognitionConstructor()) {
+      setSpeechError(
+        "Este navegador não oferece transcrição automática. Escreva o que falou abaixo.",
+      );
+      if (!wantsRecorder) return;
+    }
+
+    // No modo só transcrição, começa pelo reconhecimento: é ele que pede o
+    // microfone e precisa ser iniciado dentro do toque da pessoa.
+    if (!wantsRecorder) {
+      const started = startRecognition();
+      if (!started) return;
+      startedAtRef.current = performance.now();
+      setRecording(true);
+      timerRef.current = window.setInterval(() => {
+        const seconds = (performance.now() - startedAtRef.current) / 1000;
+        setElapsed(Math.floor(seconds));
+      }, 250);
       return;
     }
 
@@ -349,7 +417,7 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
         setElapsed(Math.floor(seconds));
       }, 250);
 
-      startRecognition();
+      if (wantsSpeech) startRecognition();
     } catch (error) {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -372,6 +440,12 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
     setSpeechError(null);
     finalTranscriptRef.current = "";
     interimRef.current = "";
+  }
+
+  function chooseMode(next: AudioMode) {
+    if (recording || next === mode) return;
+    resetRecording();
+    setMode(next);
   }
 
   function handleTranscriptChange(value: string) {
@@ -478,6 +552,10 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
   const amountError =
     attempted && amountCents < 1 ? "Informe quanto entrou." : null;
   const hasText = transcript.trim().length > 0;
+  const hasCapture = Boolean(audioUrl) || hasText;
+  const canChooseMode = Boolean(
+    isAndroid && speechSupported && recordingSupported,
+  );
 
   const title =
     phase === "record"
@@ -535,6 +613,54 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
     >
       {phase === "record" ? (
         <div className="space-y-5">
+          {canChooseMode ? (
+            <section className="rounded-[4px] border border-line bg-paper p-3">
+              <p className="text-[0.6875rem] font-bold uppercase tracking-[0.1em] text-muted">
+                Como quer registrar?
+              </p>
+              <p className="mt-1 text-[0.6875rem] leading-relaxed text-muted">
+                No Android, o navegador não grava e transcreve ao mesmo tempo.
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => chooseMode("transcribe")}
+                  disabled={recording}
+                  aria-pressed={mode === "transcribe"}
+                  className={cn(
+                    "flex min-h-[3.25rem] items-center gap-2 rounded-[4px] border p-2.5 text-left text-[0.75rem] font-bold transition-colors disabled:opacity-60",
+                    mode === "transcribe"
+                      ? "border-terracotta bg-terracotta-soft text-ink"
+                      : "border-line bg-cream text-ink",
+                  )}
+                >
+                  <Mic className="size-4 flex-none text-terracotta-dark" />
+                  Transcrever
+                </button>
+                <button
+                  type="button"
+                  onClick={() => chooseMode("record")}
+                  disabled={recording}
+                  aria-pressed={mode === "record"}
+                  className={cn(
+                    "flex min-h-[3.25rem] items-center gap-2 rounded-[4px] border p-2.5 text-left text-[0.75rem] font-bold transition-colors disabled:opacity-60",
+                    mode === "record"
+                      ? "border-terracotta bg-terracotta-soft text-ink"
+                      : "border-line bg-cream text-ink",
+                  )}
+                >
+                  <AudioLines className="size-4 flex-none text-terracotta-dark" />
+                  Gravar áudio
+                </button>
+              </div>
+              <p className="mt-2 text-[0.6875rem] leading-relaxed text-muted">
+                {mode === "transcribe"
+                  ? "O texto aparece ao vivo; o áudio não fica salvo neste modo."
+                  : "O áudio fica disponível para ouvir; escreva o texto abaixo."}
+              </p>
+            </section>
+          ) : null}
+
           <div className="rounded-[4px] border border-line bg-cream p-4 text-center">
             {recording ? (
               <button
@@ -550,9 +676,9 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
               <button
                 type="button"
                 onClick={() => void startRecording()}
-                disabled={recordingSupported === false}
+                disabled={mode !== "transcribe" && recordingSupported === false}
                 className="mx-auto grid size-24 place-items-center rounded-full bg-terracotta text-cream transition-colors hover:bg-terracotta-dark disabled:cursor-not-allowed disabled:opacity-45"
-                aria-label={audioUrl ? "Gravar de novo" : "Começar a gravar"}
+                aria-label={hasCapture ? "Gravar de novo" : "Começar a gravar"}
               >
                 <Mic className="size-9" strokeWidth={1.8} />
               </button>
@@ -561,14 +687,18 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
             <p className="mt-3 text-sm font-bold text-ink">
               {recording
                 ? "Ouvindo… fale à vontade"
-                : audioUrl
-                  ? "Áudio gravado"
+                : hasCapture
+                  ? audioUrl
+                    ? "Áudio gravado"
+                    : "Transcrição pronta"
                   : "Toque para falar"}
             </p>
             <p className="mt-1 text-xs text-muted">
               {recording
                 ? `${formatAudioDuration(elapsed)} de ${formatAudioDuration(MAX_SECONDS)}`
-                : "Item, quantidade, valor e como pagou. Até 1 minuto e meio."}
+                : mode === "transcribe"
+                  ? "Transcrição ao vivo. O áudio não é guardado neste modo."
+                  : "Item, quantidade, valor e como pagou. Até 1 minuto e meio."}
             </p>
 
             {audioUrl ? (
@@ -594,7 +724,7 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
               <label htmlFor="audio-transcript" className="field-label">
                 O que você falou?
               </label>
-              {recording ? (
+              {recording && mode !== "record" ? (
                 <span className="mb-1 text-[0.6875rem] font-semibold text-terracotta-dark">
                   Transcrevendo…
                 </span>
@@ -616,7 +746,11 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
             <p className="field-hint">
               {speechSupported === false
                 ? "Este navegador não transcreve sozinho. Grave normalmente e escreva o que falou aqui."
-                : "A transcrição aparece aqui e pode ser corrigida antes de revisar."}
+                : mode === "record"
+                  ? "Neste modo o áudio é gravado e a transcrição fica manual."
+                  : mode === "transcribe"
+                    ? "A transcrição aparece ao vivo; o áudio não é guardado."
+                    : "A transcrição aparece aqui e pode ser corrigida antes de revisar."}
             </p>
           </div>
 
@@ -626,14 +760,47 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
             </p>
           ) : null}
 
-          {recordingSupported === false ? (
+          {speechSupported && mode === "both" && !recording ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              <button
+                type="button"
+                onClick={() => chooseMode("transcribe")}
+                className="text-left text-[0.6875rem] font-bold text-terracotta-dark underline underline-offset-2"
+              >
+                Tentar só a transcrição, sem áudio
+              </button>
+              <button
+                type="button"
+                onClick={() => chooseMode("record")}
+                className="text-left text-[0.6875rem] font-bold text-muted underline underline-offset-2"
+              >
+                Prefiro gravar só o áudio
+              </button>
+            </div>
+          ) : null}
+
+          {!isAndroid &&
+          mode !== "both" &&
+          speechSupported &&
+          recordingSupported &&
+          !recording ? (
+            <button
+              type="button"
+              onClick={() => chooseMode("both")}
+              className="text-left text-[0.6875rem] font-bold text-muted underline underline-offset-2"
+            >
+              Usar áudio e transcrição juntos
+            </button>
+          ) : null}
+
+          {recordingSupported === false && mode !== "transcribe" ? (
             <p className="rounded-[4px] border border-line bg-cream p-3 text-xs leading-relaxed text-muted">
               A gravação de áudio não está disponível neste navegador. Você
               pode escrever a venda acima e seguir para a revisão.
             </p>
           ) : null}
 
-          {audioUrl && !recording ? (
+          {hasCapture && !recording ? (
             <button
               type="button"
               onClick={resetRecording}
@@ -650,10 +817,11 @@ export function AudioSheet({ onClose }: AudioSheetProps) {
               Como funciona
             </p>
             <p className="mt-1.5 text-[0.75rem] leading-relaxed text-ink/80">
-              O áudio é gravado no seu navegador e usado só para esta revisão.
-              Ele não é enviado nem guardado no servidor. A transcrição
-              automática depende do navegador e pode falhar — por isso o texto
-              fica editável.
+              {mode === "transcribe"
+                ? "Neste modo o navegador ouve e transcreve ao vivo; o áudio não é guardado. O texto fica editável antes de revisar."
+                : mode === "record"
+                  ? "O áudio é gravado no seu navegador e usado só para esta revisão. Ele não é enviado nem guardado no servidor; escreva o texto abaixo."
+                  : "O áudio é gravado no seu navegador e usado só para esta revisão. Ele não é enviado nem guardado no servidor. A transcrição automática depende do navegador e pode falhar — por isso o texto fica editável."}
             </p>
           </div>
         </div>
